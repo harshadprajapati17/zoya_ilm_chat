@@ -1,0 +1,172 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  LEAD_MANAGER
+  ADMIN
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String?        @unique
+  phone         String?
+  role          UserRole       @default(CUSTOMER)
+  language      String         @default("en") // Preferred language
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  conversations Conversation[] @relation("UserConversations")
+  messages      Message[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Conversation {
+  id                String    @id @default(cuid())
+  customerId        String
+  customer          User      @relation("UserConversations", fields: [customerId], references: [id])
+  assignedManagerId String?
+  status            String    @default("active") // active, closed, waiting
+  customerLanguage  String    @default("en")
+  currentSessionId  String?   // Track the current session ID
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  messages          Message[]
+
+  @@index([customerId])
+  @@index([assignedManagerId])
+  @@index([status])
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User          @relation(fields: [senderId], references: [id])
+  content         String
+  translatedContent String?     // Translated version if needed
+  originalLanguage String       @default("en")
+  status          MessageStatus @default(SENT)
+  isFromCustomer  Boolean       @default(true)
+  sessionId       String?       // Track which session this message belongs to
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  suggestedReplies SuggestedReply[]
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+model SuggestedReply {
+  id            String   @id @default(cuid())
+  messageId     String
+  message       Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  content       String
+  confidence    Float    @default(0.5) // AI confidence score
+  productIds    String   // Related product IDs (JSON encoded)
+  wasUsed       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([messageId])
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  pid               String   @unique // Product ID from CSV
+  name              String
+  price             Float
+  currency          String   @default("INR")
+  category          String
+  material          String?
+  stockStatus       String
+  link              String
+  purity            String?
+  gemStone1         String?
+  gemStone2         String?
+  collection        String?
+  productDetails    String?
+  metalColour       String?
+  diamondCaratage   String?
+  diamondClarity    String?
+  diamondColour     String?
+  productThumbnails String?  // Product thumbnail images (JSON array)
+  productImages     String?  // Full product images (JSON array)
+  // embedding field removed for SQLite compatibility - will use keyword search
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  stores            ProductStore[]
+
+  @@index([category])
+  @@index([stockStatus])
+  @@index([pid])
+}
+
+model Store {
+  id          String   @id @default(cuid())
+  storeName   String
+  storeType   String
+  address     String
+  email       String?
+  phone       String?
+  city        String
+  state       String
+  pincode     String?
+  latitude    String?
+  longitude   String?
+  country     String   @default("India")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  products    ProductStore[]
+
+  @@index([city])
+  @@index([state])
+  @@index([storeType])
+}
+
+model ProductStore {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(0) // Stock quantity at this store
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([productId, storeId]) // One product can only be mapped to one store once
+  @@index([productId])
+  @@index([storeId])
+}
