@@ -69,6 +69,8 @@ interface LeadManagementDashboardProps {
   managerName: string;
 }
 
+// TODO: Re-enable "edit reason" feedback UI in a future iteration.
+/*
 const EDIT_REASONS = [
   'Wrong Tone',
   'Wrong Product',
@@ -76,6 +78,7 @@ const EDIT_REASONS = [
   'Missing Detail',
   'Too Long/Short',
 ];
+*/
 
 export default function LeadManagementDashboard({
   managerId,
@@ -94,7 +97,7 @@ export default function LeadManagementDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [isAiSuggestionCollapsed, setIsAiSuggestionCollapsed] = useState(false);
   const [isEditingAiSuggestion, setIsEditingAiSuggestion] = useState(false);
-  const [editReason, setEditReason] = useState('');
+  // const [editReason, setEditReason] = useState('');
   const [showDraftMergeOptions, setShowDraftMergeOptions] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -260,7 +263,6 @@ export default function LeadManagementDashboard({
       setTranslatedInput('');
       setAiSuggestion(null);
       setIsEditingAiSuggestion(false);
-      setEditReason('');
       setShowDraftMergeOptions(false);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -278,7 +280,6 @@ export default function LeadManagementDashboard({
     if (!aiSuggestion) return;
     setInputMessage(aiSuggestion.suggestedReply);
     setIsEditingAiSuggestion(true);
-    setEditReason('');
     setShowDraftMergeOptions(false);
   };
 
@@ -624,32 +625,10 @@ export default function LeadManagementDashboard({
                   return (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        {hasActuallyEdited ? (
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1.5">
-                              <Sparkles className="w-3 h-3" style={{ color: 'var(--zoya-gold)' }} />
-                              <span className="text-xs italic" style={{ color: 'var(--zoya-muted)' }}>
-                                Your feedback improves suggestions
-                              </span>
-                            </div>
-                            <span className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--zoya-accent)' }}>
-                              Why did you edit?
-                            </span>
-                            <select
-                              value={editReason}
-                              onChange={(e) => setEditReason(e.target.value)}
-                              className="text-xs px-3 py-1.5 rounded-lg border zoya-input"
-                              style={{ maxWidth: '200px' }}
-                            >
-                              <option value="">Select reason</option>
-                              {EDIT_REASONS.map((reason) => (
-                                <option key={reason} value={reason}>{reason}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <span />
-                        )}
+                        {/* TODO: Temporarily disabled.
+                            "Why did you edit?" feedback UI triggers when a meaningful change is made.
+                            We'll re-enable this later; for now we allow sending edits without collecting a reason. */}
+                        <span />
                       </div>
                       <div className="flex items-center gap-2">
                         {showDraftMergeOptions && !isEditingAiSuggestion ? (
@@ -691,14 +670,14 @@ export default function LeadManagementDashboard({
                                   ? !inputMessage.trim()
                                   : !aiSuggestion.suggestedReply.trim())
                               }
-                              className="p-2.5 rounded-lg transition-colors zoya-btn-icon cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="p-2.5   rounded-lg transition-colors zoya-btn-icon cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Preview Translation"
                             >
-                              <Languages className="w-5 h-5" />
+                              <Languages className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={hasActuallyEdited ? () => sendMessage() : acceptAndSend}
-                              disabled={hasActuallyEdited ? (!inputMessage.trim() || !editReason || isSending) : isSending}
+                              disabled={hasActuallyEdited ? (!inputMessage.trim() || isSending) : isSending}
                               className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               style={{ background: 'var(--zoya-gold)' }}
                             >
