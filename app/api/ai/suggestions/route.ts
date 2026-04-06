@@ -30,10 +30,12 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      conversationHistory = messages.map((msg) => ({
-        role: msg.isFromCustomer ? ('user' as const) : ('assistant' as const),
-        content: msg.content,
-      }));
+      conversationHistory = messages.map(
+        (msg: { content: string; isFromCustomer: boolean }) => ({
+          role: msg.isFromCustomer ? ('user' as const) : ('assistant' as const),
+          content: msg.content,
+        })
+      );
     }
 
     // Generate AI suggestion

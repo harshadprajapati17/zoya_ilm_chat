@@ -35,7 +35,7 @@ async function importProductImages() {
     console.log('Column indices - pid:', pidIndex, 'thumbnails:', thumbnailsIndex, 'images:', imagesIndex);
 
     // Extract all VALUES entries
-    const valuesMatch = sqlContent.match(/VALUES\s+(.+)/s);
+    const valuesMatch = sqlContent.match(/VALUES\s+([\s\S]+)/);
     if (!valuesMatch) {
       throw new Error('Could not parse VALUES from SQL');
     }

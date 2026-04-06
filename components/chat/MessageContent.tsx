@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactElement } from 'react';
 
 interface MessageContentProps {
   content: string;
@@ -13,7 +13,7 @@ export default function MessageContent({
 }: MessageContentProps) {
   // Parse markdown-style content (images, links, bold text)
   const renderContent = (text: string) => {
-    const parts: (string | JSX.Element)[] = [];
+    const parts: (string | ReactElement)[] = [];
     let currentText = text;
     let key = 0;
 
@@ -21,7 +21,7 @@ export default function MessageContent({
     const lines = currentText.split('\n');
 
     lines.forEach((line, lineIndex) => {
-      const lineParts: (string | JSX.Element)[] = [];
+      const lineParts: (string | ReactElement)[] = [];
       let lastIndex = 0;
 
       // Combined regex to match images, links, and bold text
