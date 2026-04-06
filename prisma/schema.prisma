@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String?        @unique
+  phone         String?
+  role          UserRole       @default(CUSTOMER)
+  language      String         @default("en")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[] @relation("UserConversations")
+  messages      Message[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Conversation {
+  id                String    @id @default(cuid())
+  customerId        String
+  assignedManagerId String?
+  status            String    @default("active")
+  customerLanguage  String    @default("en")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  currentSessionId  String?
+  customer          User      @relation("UserConversations", fields: [customerId], references: [id])
+  messages          Message[]
+
+  @@index([customerId])
+  @@index([assignedManagerId])
+  @@index([status])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  conversationId    String
+  senderId          String
+  content           String
+  translatedContent String?
+  originalLanguage  String           @default("en")
+  status            MessageStatus    @default(SENT)
+  isFromCustomer    Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  sessionId         String?
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender            User             @relation(fields: [senderId], references: [id])
+  suggestedReplies  SuggestedReply[]
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+model SuggestedReply {
+  id         String   @id @default(cuid())
+  messageId  String
+  content    String
+  confidence Float    @default(0.5)
+  productIds String
+  wasUsed    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model Product {
+  id                String         @id @default(cuid())
+  pid               String         @unique
+  name              String
+  price             Float
+  currency          String         @default("INR")
+  category          String
+  material          String?
+  stockStatus       String
+  link              String
+  purity            String?
+  gemStone1         String?
+  gemStone2         String?
+  collection        String?
+  productDetails    String?
+  metalColour       String?
+  diamondCaratage   String?
+  diamondClarity    String?
+  diamondColour     String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  productImages     String?
+  productThumbnails String?
+  stores            ProductStore[]
+
+  @@index([category])
+  @@index([stockStatus])
+  @@index([pid])
+}
+
+model Store {
+  id        String         @id @default(cuid())
+  storeName String
+  storeType String
+  address   String
+  email     String?
+  phone     String?
+  city      String
+  state     String
+  pincode   String?
+  latitude  String?
+  longitude String?
+  country   String         @default("India")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  products  ProductStore[]
+
+  @@index([city])
+  @@index([state])
+  @@index([storeType])
+}
+
+model ProductStore {
+  id        String   @id @default(cuid())
+  productId String
+  storeId   String
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, storeId])
+  @@index([productId])
+  @@index([storeId])
+}
+
+enum UserRole {
+  CUSTOMER
+  LEAD_MANAGER
+  ADMIN
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
