@@ -338,22 +338,61 @@ export default function LeadManagementDashboard({
   return (
     <div className="flex h-screen zoya-chat-surface">
       {/* Conversations Sidebar */}
-      <div className="w-72 shrink-0 bg-white border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--zoya-border-light)' }}>
-        <div className="px-4 border-b bg-white flex flex-col justify-center" style={{ borderColor: 'var(--zoya-border-light)', height: '72px' }}>
-          <h2 className="text-xl zoya-heading text-[var(--foreground)]">Conversations</h2>
-          <p className="text-xs mt-0.5 text-[var(--zoya-accent)]">{conversations.length} active</p>
-        </div>
+      <div className="w-72 shrink-0 flex flex-col overflow-hidden border-r bg-white" style={{ borderColor: 'var(--zoya-border-light)' }}>
+        <header
+          className="shrink-0 border-b px-4 pb-4 pt-5"
+          style={{
+            borderColor: 'var(--zoya-border-light)',
+            background: 'linear-gradient(180deg, #ffffff 0%, #fcfaf7 100%)',
+          }}
+        >
+          <div className="mb-4 flex justify-center">
+            <img
+              src="https://www.zoya.in/on/demandware.static/-/Sites-Zoya-Library/default/dw3635170c/images/zoya-header-logo.png"
+              alt="Zoya"
+              className="h-10 w-auto max-w-full object-contain"
+            />
+          </div>
+          <div
+            className="mx-auto mb-4 h-px w-11 rounded-full"
+            style={{ background: 'var(--zoya-gold-pale)' }}
+            aria-hidden
+          />
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="zoya-heading text-xl font-semibold leading-tight tracking-tight text-[var(--foreground)]">
+              Conversations
+            </h2>
+            <span
+              className="shrink-0 tabular-nums rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+              style={{
+                background: 'var(--zoya-gold-bg)',
+                color: 'var(--zoya-gold)',
+              }}
+            >
+              {conversations.length} active
+            </span>
+          </div>
+        </header>
 
-        {/* Search Bar */}
-        <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--zoya-border-light)' }}>
+        <div
+          className="shrink-0 border-b px-3 py-3"
+          style={{ borderColor: 'var(--zoya-border-light)', background: 'var(--zoya-bg-soft)' }}
+        >
+          <label htmlFor="conv-sidebar-search" className="sr-only">
+            Search conversations
+          </label>
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--zoya-muted)]" />
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--zoya-muted)]"
+              aria-hidden
+            />
             <input
+              id="conv-sidebar-search"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs zoya-input"
+              placeholder="Search…"
+              className="w-full rounded-full border border-[var(--zoya-border-light)] bg-white py-2 pl-9 pr-3 text-sm text-[var(--foreground)] shadow-sm placeholder:text-[var(--zoya-muted)] focus:border-[var(--zoya-gold)] focus:outline-none focus:ring-2 focus:ring-[var(--zoya-gold-bg)]"
             />
           </div>
         </div>
