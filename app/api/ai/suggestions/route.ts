@@ -7,7 +7,7 @@ import { translateText } from '@/lib/services/translation';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { messageId, conversationId, customerMessage, targetLanguage = 'en' } = body;
+    const { messageId, conversationId, customerMessage, targetLanguage = 'en', conversationHistory: providedHistory } = body;
 
     if (!customerMessage) {
       return NextResponse.json(
@@ -16,10 +16,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get conversation history if conversationId provided
+    // Get conversation history - prefer provided history (from UI state), otherwise fetch from database
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-    if (conversationId) {
+    if (providedHistory && Array.isArray(providedHistory)) {
+      // Use provided conversation history (from UI state)
+      conversationHistory = providedHistory;
+    } else if (conversationId) {
+      // Fallback: Fetch from database if no history provided
       const messages = await prisma.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: 'asc' },

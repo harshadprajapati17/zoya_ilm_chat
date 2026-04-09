@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Loader2,
   Search,
+  Trash2,
 } from 'lucide-react';
 import MessageContent from './MessageContent';
 
@@ -76,10 +77,11 @@ export default function LeadManagementDashboard({
   const [isSending, setIsSending] = useState(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
-  const [translatedInput, setTranslatedInput] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState('en');
   const [lastSuggestedMessageId, setLastSuggestedMessageId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
+  const [showTranslations, setShowTranslations] = useState<Set<string>>(new Set());
+  const [translatingInput, setTranslatingInput] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -171,13 +173,21 @@ export default function LeadManagementDashboard({
 
       if (!lastCustomerMessage) return;
 
+      // Build conversation history from current UI state (not database)
+      // This ensures we use the messages visible in the UI, not deleted ones
+      const conversationHistory = messages.map(msg => ({
+        role: msg.isFromCustomer ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
       const response = await fetch('/api/ai/suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId: selectedConversation.id,
+          // Don't send conversationId - this would fetch from database
           customerMessage: lastCustomerMessage.content,
           targetLanguage: selectedConversation.customerLanguage,
+          conversationHistory: conversationHistory, // Send UI state instead
         }),
       });
 
@@ -191,9 +201,89 @@ export default function LeadManagementDashboard({
     }
   };
 
-  const translateMessage = async () => {
-    if (!inputMessage.trim() || !selectedConversation) return;
+  const toggleMessageTranslation = async (messageId: string) => {
+    console.log('[Translation] Toggle called for message:', messageId);
 
+    // If already showing translation, just hide it
+    if (showTranslations.has(messageId)) {
+      console.log('[Translation] Hiding translation');
+      const newSet = new Set(showTranslations);
+      newSet.delete(messageId);
+      setShowTranslations(newSet);
+      return;
+    }
+
+    // Find the message
+    const message = messages.find(m => m.id === messageId);
+    if (!message) {
+      console.error('[Translation] Message not found:', messageId);
+      return;
+    }
+
+    console.log('[Translation] Message found:', {
+      id: message.id,
+      hasTranslation: !!message.translatedContent,
+      originalLang: message.originalLanguage,
+      content: message.content.substring(0, 50)
+    });
+
+    // If message already has translation, just show it
+    if (message.translatedContent && message.originalLanguage !== 'en') {
+      console.log('[Translation] Showing existing translation:', message.translatedContent.substring(0, 50));
+      const newSet = new Set(showTranslations);
+      newSet.add(messageId);
+      setShowTranslations(newSet);
+      return;
+    }
+
+    // Otherwise, fetch translation
+    console.log('[Translation] Fetching new translation...');
+    setTranslatingMessageId(messageId);
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: message.content,
+          targetLanguage: 'en',
+          sourceLanguage: message.originalLanguage,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[Translation] API Error:', errorData);
+        alert('Translation failed: ' + (errorData.error || 'Unknown error'));
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[Translation] Translation received:', data);
+
+      // Update message with translation
+      setMessages(prev => prev.map(m =>
+        m.id === messageId
+          ? { ...m, translatedContent: data.translatedText }
+          : m
+      ));
+
+      // Show translation
+      const newSet = new Set(showTranslations);
+      newSet.add(messageId);
+      setShowTranslations(newSet);
+      console.log('[Translation] Translation displayed');
+    } catch (error) {
+      console.error('[Translation] Error:', error);
+      alert('Failed to translate message. Please check console for details.');
+    } finally {
+      setTranslatingMessageId(null);
+    }
+  };
+
+  const translateInputToCustomerLanguage = async () => {
+    if (!selectedConversation || !inputMessage.trim()) return;
+
+    setTranslatingInput(true);
     try {
       const response = await fetch('/api/translate', {
         method: 'POST',
@@ -206,9 +296,33 @@ export default function LeadManagementDashboard({
       });
 
       const data = await response.json();
-      setTranslatedInput(data.translatedText);
+      setInputMessage(data.translatedText);
     } catch (error) {
-      console.error('Error translating message:', error);
+      console.error('Error translating input:', error);
+    } finally {
+      setTranslatingInput(false);
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    if (!selectedConversation) return;
+
+    // Immediately remove from UI (optimistic update)
+    setMessages((prev) => prev.filter(m => m.id !== messageId));
+
+    // Clear AI suggestion and reset tracking to regenerate with new context
+    setAiSuggestion(null);
+    setLastSuggestedMessageId(null);
+
+    // Also delete from database (fire and forget - UI already updated)
+    try {
+      await fetch(`/api/chat?messageId=${messageId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Error deleting message from database:', error);
+      // Note: We don't revert the UI change even if DB delete fails
+      // This ensures the regenerate feature works immediately
     }
   };
 
@@ -233,7 +347,6 @@ export default function LeadManagementDashboard({
       const data = await response.json();
       setMessages((prev) => [...prev, data.message]);
       setInputMessage('');
-      setTranslatedInput('');
       setAiSuggestion(null);
       // Reset the suggestion tracking so new customer messages can trigger suggestions
       // But keep lastSuggestedMessageId so we don't re-suggest for old messages
@@ -362,10 +475,17 @@ export default function LeadManagementDashboard({
                   </div>
                 )}
                 <button
-                  onClick={() => fetchMessages(selectedConversation.id)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  onClick={() => {
+                    // Regenerate AI suggestion for the last customer message
+                    setAiSuggestion(null);
+                    setLastSuggestedMessageId(null);
+                    getAISuggestion();
+                  }}
+                  disabled={isLoadingSuggestion || messages.filter(m => m.isFromCustomer).length === 0}
+                  className="p-2 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Regenerate AI suggestion"
                 >
-                  <RefreshCw className="w-5 h-5 text-gray-600" />
+                  <RefreshCw className={`w-5 h-5 text-amber-600 ${isLoadingSuggestion ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
@@ -410,19 +530,56 @@ export default function LeadManagementDashboard({
                             : 'bg-stone-600 text-white rounded-br-none'
                         }`}
                       >
-                        <p className="text-xs font-semibold mb-1 opacity-70">
-                          {message.sender.name}
-                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-semibold mb-1 opacity-70">
+                            {message.sender.name}
+                            {message.isFromCustomer && message.originalLanguage !== 'en' && (
+                              <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                {message.originalLanguage.toUpperCase()}
+                              </span>
+                            )}
+                          </p>
+                          {/* Translate button for customer messages in non-English */}
+                          {message.isFromCustomer && message.originalLanguage !== 'en' && (
+                            <button
+                              onClick={() => toggleMessageTranslation(message.id)}
+                              disabled={translatingMessageId === message.id}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50 flex items-center gap-1"
+                              title={showTranslations.has(message.id) ? "Hide translation" : "Show English translation"}
+                            >
+                              {translatingMessageId === message.id ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Translating...
+                                </>
+                              ) : (
+                                <>
+                                  <Languages className="w-3 h-3" />
+                                  {showTranslations.has(message.id) ? 'Hide' : 'Translate'}
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
                         <MessageContent
                           content={message.content}
                           className="text-sm whitespace-pre-wrap break-words"
                         />
-                        {message.translatedContent && message.content !== message.translatedContent && (
-                          <div className="mt-2 pt-2 border-t border-gray-200">
-                            <MessageContent
-                              content={message.translatedContent}
-                              className="text-xs opacity-75 italic"
-                            />
+                        {/* Show translation if toggled */}
+                        {showTranslations.has(message.id) && (
+                          <div className="mt-2 pt-2 border-t border-blue-100 bg-blue-50 px-3 py-2 -mx-4 -mb-3 rounded-b-lg">
+                            <p className="text-xs font-semibold text-blue-700 mb-1">English Translation:</p>
+                            {message.translatedContent ? (
+                              <MessageContent
+                                content={message.translatedContent}
+                                className="text-sm text-gray-800"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span className="text-xs">Translating...</span>
+                              </div>
+                            )}
                           </div>
                         )}
                         <p className="text-xs mt-1 opacity-60">
@@ -448,9 +605,12 @@ export default function LeadManagementDashboard({
                     <p className="text-sm font-semibold text-gray-800 mb-2">
                       AI Suggested Reply (Confidence: {(aiSuggestion.confidence * 100).toFixed(0)}%)
                     </p>
-                    <p className="text-sm text-gray-700 bg-white p-3 rounded-lg shadow-sm">
-                      {aiSuggestion.suggestedReply}
-                    </p>
+                    <div className="text-sm text-gray-700 bg-white p-3 rounded-lg shadow-sm">
+                      <MessageContent
+                        content={aiSuggestion.suggestedReply}
+                        className="text-sm text-gray-700"
+                      />
+                    </div>
                     {aiSuggestion.relatedProducts.length > 0 && (
                       <div className="mt-3">
                         <p className="text-xs font-semibold text-gray-700 mb-2">Related Products:</p>
@@ -458,7 +618,7 @@ export default function LeadManagementDashboard({
                           {aiSuggestion.relatedProducts.map((product, idx) => (
                             <div key={idx} className="text-xs bg-white p-2 rounded">
                               <span className="font-medium">{product.name}</span> -{' '}
-                              {product.currency} {product.price}
+                              {product.currency} {product.price.toLocaleString()}
                             </div>
                           ))}
                         </div>
@@ -471,23 +631,52 @@ export default function LeadManagementDashboard({
 
             {/* Input Area */}
             <div className="bg-white border-t p-4">
+              {/* Translate button info banner */}
+              {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
+                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-blue-600" />
+                    <span className="text-blue-800">
+                      Customer speaks <strong>{selectedConversation.customerLanguage.toUpperCase()}</strong>
+                    </span>
+                  </div>
+                  <button
+                    onClick={translateInputToCustomerLanguage}
+                    disabled={translatingInput}
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs font-medium"
+                  >
+                    {translatingInput ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Translating...
+                      </>
+                    ) : (
+                      <>
+                        <Languages className="w-3 h-3" />
+                        Translate to {selectedConversation.customerLanguage.toUpperCase()}
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <textarea
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Type your reply..."
+                  placeholder="Type your reply in English..."
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-transparent resize-none"
                   rows={3}
                   disabled={isSending}
+                  onKeyDown={(e) => {
+                    // Send message on Ctrl+Enter or Cmd+Enter
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
                 />
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={translateMessage}
-                    className="p-3 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
-                    title="Preview Translation"
-                  >
-                    <Languages className="w-5 h-5 text-gray-700" />
-                  </button>
                   <button
                     onClick={sendMessage}
                     disabled={!inputMessage.trim() || isSending}
@@ -501,14 +690,6 @@ export default function LeadManagementDashboard({
                   </button>
                 </div>
               </div>
-              {translatedInput && (
-                <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-                  <p className="text-xs text-blue-900 font-semibold mb-1">
-                    Translation to {selectedConversation.customerLanguage.toUpperCase()}:
-                  </p>
-                  <p className="text-sm text-blue-800">{translatedInput}</p>
-                </div>
-              )}
             </div>
           </>
         ) : (

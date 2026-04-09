@@ -25,6 +25,17 @@ enum MessageStatus {
   READ
 }
 
+enum EditCategory {
+  TONE_ADJUSTMENT        // Changed formality or empathy level
+  PRODUCT_CORRECTION     // Wrong/missing products
+  ACCURACY_ISSUE         // Incorrect information
+  LENGTH_PROBLEM         // Too long or too short
+  LANGUAGE_QUALITY       // Grammar/clarity improvements
+  COMPLETE_REWRITE       // >70% changed
+  MINOR_EDIT             // Small tweaks
+  NONE                   // No edit made
+}
+
 model User {
   id            String         @id @default(cuid())
   name          String
@@ -95,6 +106,9 @@ model SuggestedReply {
   productIds    String   // Related product IDs (JSON encoded)
   wasUsed       Boolean  @default(false)
   createdAt     DateTime @default(now())
+
+  // Relations
+  editFeedback  AIEditFeedback?
 
   @@index([messageId])
 }
@@ -169,4 +183,41 @@ model ProductStore {
   @@unique([productId, storeId]) // One product can only be mapped to one store once
   @@index([productId])
   @@index([storeId])
+}
+
+model AIEditFeedback {
+  id                    String         @id @default(cuid())
+  suggestedReplyId      String         @unique
+  suggestedReply        SuggestedReply @relation(fields: [suggestedReplyId], references: [id], onDelete: Cascade)
+
+  // Content comparison
+  originalSuggestion    String         // AI's original suggestion
+  editedContent         String         // Admin's edited version
+  editedBy              String         // Manager/Admin who edited
+
+  // Analysis results
+  editCategory          EditCategory   @default(NONE)
+  editPercentage        Float          @default(0) // % of content changed
+  similarityScore       Float?         // Semantic similarity (0-1)
+
+  // Sentiment & Quality Analysis
+  toneShift             String?        // JSON: {from: "formal", to: "casual"}
+  sentimentAnalysis     String?        // JSON: detailed sentiment breakdown
+  productChanges        String?        // JSON: products added/removed/changed
+  keyChanges            String?        // JSON: list of key differences
+
+  // Learning metrics
+  acceptanceScore       Float?         // How good was the original (0-1)
+  improvementNeeded     String?        // Areas for improvement (JSON array)
+
+  // Metadata
+  conversationContext   String?        // Context at time of suggestion (JSON)
+  customerQuery         String?        // Original customer message
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([editCategory])
+  @@index([editedBy])
+  @@index([createdAt])
+  @@index([acceptanceScore])
 }

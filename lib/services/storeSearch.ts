@@ -25,6 +25,7 @@ export interface ProductAvailability {
     category: string;
     link: string;
     productThumbnails: string | null;
+    productImages: string | null;
   };
   stores: Array<{
     store: Store;
@@ -88,6 +89,7 @@ export async function getProductAvailability(
       category: true,
       link: true,
       productThumbnails: true,
+      productImages: true,
     },
   });
 
