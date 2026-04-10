@@ -15,9 +15,17 @@ export async function generateReplySuggestion(
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
 ): Promise<SuggestionResponse> {
   try {
-    // Get AI learning insights from past feedback
-    const enhancedInstructions = await getEnhancedPromptInstructions();
-    const similarPastEdits = await getSimilarPastEdits(customerMessage, 3);
+    // Get AI learning insights from past feedback (gracefully handle errors)
+    let enhancedInstructions = '';
+    let similarPastEdits: any[] = [];
+
+    try {
+      enhancedInstructions = await getEnhancedPromptInstructions();
+      similarPastEdits = await getSimilarPastEdits(customerMessage, 3);
+    } catch (learningError) {
+      console.log('[AI Suggestions] Feedback learning not available (might be first deployment):', learningError);
+      // Continue without learning data - this is expected for new deployments
+    }
 
     const lowerMessage = customerMessage.toLowerCase();
 
