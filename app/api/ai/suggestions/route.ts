@@ -60,15 +60,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Save suggestion to database if messageId provided
+    let suggestedReplyId: string | undefined;
     if (messageId) {
-      await prisma.suggestedReply.create({
+      const savedSuggestion = await prisma.suggestedReply.create({
         data: {
           messageId,
           content: suggestion.suggestedReply,
           confidence: suggestion.confidence,
           productIds: JSON.stringify(suggestion.relatedProducts.map((p) => p.id)),
+          wasUsed: false, // Will be updated if admin uses it
         },
       });
+      suggestedReplyId = savedSuggestion.id;
     }
 
     return NextResponse.json({
@@ -77,6 +80,7 @@ export async function POST(request: NextRequest) {
       confidence: suggestion.confidence,
       relatedProducts: suggestion.relatedProducts,
       reasoning: suggestion.reasoning,
+      suggestedReplyId, // Return the database ID for feedback tracking
     });
   } catch (error) {
     console.error('Error generating AI suggestion:', error);

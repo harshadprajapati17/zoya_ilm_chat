@@ -60,6 +60,7 @@ interface AISuggestion {
     currency: string;
     link: string;
   }>;
+  suggestedReplyId?: string; // ID from database for feedback tracking
 }
 
 interface LeadManagementDashboardProps {
@@ -94,6 +95,13 @@ export default function LeadManagementDashboard({
   const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
   const [showTranslations, setShowTranslations] = useState<Set<string>>(new Set());
   const [translatingInput, setTranslatingInput] = useState(false);
+
+  // Feedback tracking state
+  const [usedAISuggestion, setUsedAISuggestion] = useState<{
+    suggestedReplyId: string | null;
+    originalSuggestion: string;
+    customerQuery: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -202,7 +210,7 @@ export default function LeadManagementDashboard({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Don't send conversationId - this would fetch from database
+          messageId: lastCustomerMessage.id, // Pass messageId to save suggestion to database
           customerMessage: lastCustomerMessage.content,
           targetLanguage: selectedConversation.customerLanguage,
           conversationHistory: conversationHistory, // Send UI state instead
@@ -348,6 +356,11 @@ export default function LeadManagementDashboard({
 
     setIsSending(true);
     shouldAutoScrollRef.current = true; // Force scroll when admin sends message
+
+    // Capture current values before clearing state
+    const messageContent = inputMessage;
+    const feedbackData = usedAISuggestion;
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -355,7 +368,7 @@ export default function LeadManagementDashboard({
         body: JSON.stringify({
           conversationId: selectedConversation.id,
           senderId: managerId,
-          content: inputMessage,
+          content: messageContent,
           isFromCustomer: false,
           targetLanguage: selectedConversation.customerLanguage,
         }),
@@ -365,6 +378,46 @@ export default function LeadManagementDashboard({
       setMessages((prev) => [...prev, data.message]);
       setInputMessage('');
       setAiSuggestion(null);
+      setUsedAISuggestion(null); // Clear tracking state
+
+      // Check if we need to capture feedback (AI suggestion was used and edited)
+      if (feedbackData && feedbackData.suggestedReplyId) {
+        const originalSuggestion = feedbackData.originalSuggestion.trim();
+        const editedContent = messageContent.trim();
+
+        // Detect if edit was made (content changed)
+        if (originalSuggestion !== editedContent) {
+          console.log('[Feedback] Edit detected, submitting feedback...');
+
+          // Submit feedback for analysis (fire and forget - don't block UI)
+          try {
+            await fetch('/api/ai/feedback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                suggestedReplyId: feedbackData.suggestedReplyId,
+                originalSuggestion,
+                editedContent,
+                editedBy: managerId,
+                customerQuery: feedbackData.customerQuery,
+                conversationContext: {
+                  messages: messages.slice(-5).map(m => ({
+                    role: m.isFromCustomer ? 'user' : 'assistant',
+                    content: m.content
+                  }))
+                },
+              }),
+            });
+            console.log('[Feedback] Feedback submitted successfully');
+          } catch (error) {
+            console.error('[Feedback] Error submitting feedback:', error);
+            // Don't block UI on feedback submission failure
+          }
+        } else {
+          console.log('[Feedback] No edit detected - suggestion used as-is');
+        }
+      }
+
       // Reset the suggestion tracking so new customer messages can trigger suggestions
       // But keep lastSuggestedMessageId so we don't re-suggest for old messages
     } catch (error) {
@@ -753,6 +806,18 @@ export default function LeadManagementDashboard({
                         onClick={() => {
                           // Copy AI suggestion to input box
                           setInputMessage(aiSuggestion.suggestedReply);
+
+                          // Track that AI suggestion was used for feedback
+                          const lastCustomerMessage = messages
+                            .filter((m) => m.isFromCustomer)
+                            .pop();
+
+                          setUsedAISuggestion({
+                            suggestedReplyId: aiSuggestion.suggestedReplyId || null,
+                            originalSuggestion: aiSuggestion.suggestedReply,
+                            customerQuery: lastCustomerMessage?.content || '',
+                          });
+
                           // Focus the textarea
                           textareaRef.current?.focus();
                         }}
