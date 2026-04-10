@@ -190,11 +190,17 @@ export async function generateReplySuggestion(
     // Use category from context if available
     const effectiveCategory = category || categoryFromContext;
 
-    // Detect general browsing queries (what do you have, show me jewelry, etc.)
-    const isBrowsingQuery = /\b(what|which|show|browse|see|view|have|sell|available|offer|collection|catalog|products?|items?|ornaments?|jewelry|jewellery)\b/i.test(lowerMessage)
-      && !effectiveCategory
-      && !contextualPriceRange
-      && lowerMessage.length < 50; // Short, general queries
+    // Detect general browsing queries (what do you have, show me jewelry, gift ideas, etc.)
+    // Include gift queries, jewelry queries, and "what do you have/sell" type questions
+    const isGiftQuery = /\b(gift|present|surprise|occasion)\b/i.test(lowerMessage);
+    const isJewelryBrowsing = /\b(jewelry|jewellery|ornaments?|items?|pieces?|collection)\b/i.test(lowerMessage)
+      && /\b(what|show|see|browse|have|sell|offer|available|looking for)\b/i.test(lowerMessage);
+    const isWhatDoYouHave = /\b(what|which)\b.*\b(do you have|have you got|available|sell|offer|got)\b/i.test(lowerMessage);
+
+    const isBrowsingQuery = (isGiftQuery || isJewelryBrowsing || isWhatDoYouHave)
+      && !effectiveCategory  // They haven't specified a specific category like "ring" or "necklace"
+      && !contextualPriceRange  // They haven't mentioned a budget
+      && lowerMessage.length < 100; // Reasonable message length for browsing
 
     // Step 1: Search based on query type
     if (contextualProductName && hasReference) {
