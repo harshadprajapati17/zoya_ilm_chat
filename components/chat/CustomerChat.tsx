@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, MessageCircle, User as UserIcon } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 import MessageContent from './MessageContent';
 
 interface Message {
@@ -37,22 +37,22 @@ export default function CustomerChat({
     name: '',
     mobile: '',
   });
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
 
-  // Smart auto-scroll - only scroll if user is at bottom or new message added
+  // Scroll only the messages pane — avoid scrollIntoView (it scrolls the document on
+  // mobile and fights the keyboard, making the input feel inactive).
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
 
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     const newMessageAdded = messages.length > prevMessageCountRef.current;
 
-    // Auto-scroll if user is near bottom OR a new message was added
     if (shouldAutoScrollRef.current || isAtBottom || newMessageAdded) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
       shouldAutoScrollRef.current = false;
     }
 
@@ -163,15 +163,14 @@ export default function CustomerChat({
   // Show pre-chat form
   if (showPreChatForm) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
-        {/* Header with Agent Info */}
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-gray-50 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(1rem,env(safe-area-inset-top,0px))]">
+        {/* Header with brand */}
         <div className="mb-8 text-center">
-          <div className="relative inline-block mb-4">
-            <div className="w-20 h-20 bg-stone-200 rounded-full flex items-center justify-center">
-              <MessageCircle className="w-10 h-10 text-stone-600" />
-            </div>
-            <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-white"></div>
-          </div>
+          <img
+            src="https://www.zoya.in/on/demandware.static/-/Sites-Zoya-Library/default/dw3635170c/images/zoya-header-logo.png"
+            alt="Zoya"
+            className="mx-auto mb-4 h-16 w-auto object-contain sm:h-20"
+          />
           <h2 className="text-2xl font-bold text-gray-900 mb-1">Zoya Concierge</h2>
           <p className="text-gray-600">Product Expert</p>
         </div>
@@ -230,29 +229,38 @@ export default function CustomerChat({
 
         {/* Footer */}
         <div className="mt-8 text-center text-gray-500 text-sm">
-          Powered by Zoya ILM
+          Powered by Thence
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Zoya Concierge</h1>
-            <p className="text-sm text-gray-600">Expert assistance for your jewelry needs</p>
+    <div className="flex h-[100dvh] max-h-[100dvh] min-h-[100dvh] flex-col bg-gray-50 pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
+      <header className="shrink-0 border-b border-gray-200/80 bg-white px-3 pb-2.5 pt-[calc(0.625rem+env(safe-area-inset-top,0px))] shadow-sm sm:px-5 sm:pb-3 sm:pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <img
+            src="https://www.zoya.in/on/demandware.static/-/Sites-Zoya-Library/default/dw3635170c/images/zoya-header-logo.png"
+            alt="Zoya"
+            className="h-8 w-auto max-w-[min(100%,11rem)] shrink-0 object-contain object-left sm:h-10 sm:max-w-none"
+          />
+          <div className="hidden h-8 w-px shrink-0 bg-stone-200 sm:block" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base font-semibold tracking-tight text-gray-900 sm:text-xl">
+              Zoya Concierge
+            </h1>
+            <p className="mt-0.5 text-xs leading-snug text-gray-600 sm:text-sm">
+              Expert assistance for your jewelry needs
+            </p>
           </div>
-          <span className="px-3 py-1 bg-green-500 text-white text-xs font-medium rounded-full">
-            WhatsApp
-          </span>
         </div>
-      </div>
+      </header>
 
       {/* Messages Area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={messagesContainerRef}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+      >
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-10">
             <p className="text-lg">Welcome to Zoya Support!</p>
@@ -301,11 +309,10 @@ export default function CustomerChat({
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <div className="bg-white border-t border-gray-200 p-4">
+      <div className="border-t border-gray-200 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-4">
         <form onSubmit={sendMessage} className="flex gap-3">
           <input
             type="text"
@@ -328,7 +335,7 @@ export default function CustomerChat({
           </button>
         </form>
         <p className="text-xs text-gray-500 mt-2 text-center">
-          Type in your preferred language - we'll translate for you!
+          Type in your preferred language - we&apos;ll translate for you!
         </p>
       </div>
     </div>

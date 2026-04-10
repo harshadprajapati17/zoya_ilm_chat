@@ -1,0 +1,13 @@
+# Prisma: add DATABASE_URL and DIRECT_URL under Site configuration → Environment variables (runtime + migrate).
+# Build runs `prisma generate` via the `build` script. After you commit migrations, set:
+#   command = "pnpm exec prisma migrate deploy && pnpm run build"
+
+[build]
+  publish = ".next"
+  command = "pnpm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

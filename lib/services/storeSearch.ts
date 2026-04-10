@@ -1,4 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+
+type ProductStoreWithStore = Prisma.ProductStoreGetPayload<{
+  include: { store: true };
+}>;
 
 export interface Store {
   id: string;
@@ -97,7 +102,8 @@ export async function getProductAvailability(
   const availabilities: ProductAvailability[] = [];
 
   for (const product of products) {
-    const storeAvailability = await prisma.productStore.findMany({
+    const storeAvailability: ProductStoreWithStore[] =
+      await prisma.productStore.findMany({
       where: {
         productId: product.id,
         quantity: { gt: 0 },

@@ -1,7 +1,7 @@
-import { PrismaClient } from '@/app/generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as csv from 'csv-parser';
+import csvParser from 'csv-parser';
 
 const prisma = new PrismaClient();
 
@@ -40,7 +40,7 @@ async function importProducts(csvFilePath: string) {
 
   return new Promise<void>((resolve, reject) => {
     fs.createReadStream(csvFilePath)
-      .pipe(csv())
+      .pipe(csvParser())
       .on('data', (row: ProductRow) => {
         count++;
 
@@ -96,7 +96,7 @@ async function importProducts(csvFilePath: string) {
         console.log(`\nImport completed! Total products processed: ${count}`);
         resolve();
       })
-      .on('error', (error) => {
+      .on('error', (error: unknown) => {
         console.error('Error reading CSV:', error);
         reject(error);
       });
