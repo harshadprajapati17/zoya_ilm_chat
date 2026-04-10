@@ -11,10 +11,8 @@ import {
   RefreshCw,
   Loader2,
   Search,
-  ChevronUp,
-  ChevronDown,
-  Check,
-  Phone,
+  Trash2,
+  Phone
 } from 'lucide-react';
 import MessageContent from './MessageContent';
 
@@ -91,14 +89,11 @@ export default function LeadManagementDashboard({
   const [isSending, setIsSending] = useState(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
-  const [translatedInput, setTranslatedInput] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState('en');
   const [lastSuggestedMessageId, setLastSuggestedMessageId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAiSuggestionCollapsed, setIsAiSuggestionCollapsed] = useState(false);
-  const [isEditingAiSuggestion, setIsEditingAiSuggestion] = useState(false);
-  // const [editReason, setEditReason] = useState('');
-  const [showDraftMergeOptions, setShowDraftMergeOptions] = useState(false);
+  const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
+  const [showTranslations, setShowTranslations] = useState<Set<string>>(new Set());
+  const [translatingInput, setTranslatingInput] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -196,19 +191,26 @@ export default function LeadManagementDashboard({
 
       if (!lastCustomerMessage) return;
 
+      // Build conversation history from current UI state (not database)
+      // This ensures we use the messages visible in the UI, not deleted ones
+      const conversationHistory = messages.map(msg => ({
+        role: msg.isFromCustomer ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
       const response = await fetch('/api/ai/suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId: selectedConversation.id,
+          // Don't send conversationId - this would fetch from database
           customerMessage: lastCustomerMessage.content,
           targetLanguage: selectedConversation.customerLanguage,
+          conversationHistory: conversationHistory, // Send UI state instead
         }),
       });
 
       const data = await response.json();
       setAiSuggestion(data);
-      setShowDraftMergeOptions(inputMessageRef.current.trim().length > 0);
     } catch (error) {
       console.error('Error getting AI suggestion:', error);
     } finally {
@@ -216,34 +218,136 @@ export default function LeadManagementDashboard({
     }
   };
 
-  const translateMessage = async (textOverride?: string) => {
-    const text = textOverride ?? inputMessage;
-    if (!text.trim() || !selectedConversation) return;
+  const toggleMessageTranslation = async (messageId: string) => {
+    console.log('[Translation] Toggle called for message:', messageId);
 
+    // If already showing translation, just hide it
+    if (showTranslations.has(messageId)) {
+      console.log('[Translation] Hiding translation');
+      const newSet = new Set(showTranslations);
+      newSet.delete(messageId);
+      setShowTranslations(newSet);
+      return;
+    }
+
+    // Find the message
+    const message = messages.find(m => m.id === messageId);
+    if (!message) {
+      console.error('[Translation] Message not found:', messageId);
+      return;
+    }
+
+    console.log('[Translation] Message found:', {
+      id: message.id,
+      hasTranslation: !!message.translatedContent,
+      originalLang: message.originalLanguage,
+      content: message.content.substring(0, 50)
+    });
+
+    // If message already has translation, just show it
+    if (message.translatedContent && message.originalLanguage !== 'en') {
+      console.log('[Translation] Showing existing translation:', message.translatedContent.substring(0, 50));
+      const newSet = new Set(showTranslations);
+      newSet.add(messageId);
+      setShowTranslations(newSet);
+      return;
+    }
+
+    // Otherwise, fetch translation
+    console.log('[Translation] Fetching new translation...');
+    setTranslatingMessageId(messageId);
     try {
       const response = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text,
+          text: message.content,
+          targetLanguage: 'en',
+          sourceLanguage: message.originalLanguage,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[Translation] API Error:', errorData);
+        alert('Translation failed: ' + (errorData.error || 'Unknown error'));
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[Translation] Translation received:', data);
+
+      // Update message with translation
+      setMessages(prev => prev.map(m =>
+        m.id === messageId
+          ? { ...m, translatedContent: data.translatedText }
+          : m
+      ));
+
+      // Show translation
+      const newSet = new Set(showTranslations);
+      newSet.add(messageId);
+      setShowTranslations(newSet);
+      console.log('[Translation] Translation displayed');
+    } catch (error) {
+      console.error('[Translation] Error:', error);
+      alert('Failed to translate message. Please check console for details.');
+    } finally {
+      setTranslatingMessageId(null);
+    }
+  };
+
+  const translateInputToCustomerLanguage = async () => {
+    if (!selectedConversation || !inputMessage.trim()) return;
+
+    setTranslatingInput(true);
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: inputMessage,
           targetLanguage: selectedConversation.customerLanguage,
           sourceLanguage: 'en',
         }),
       });
 
       const data = await response.json();
-      setTranslatedInput(data.translatedText);
+      setInputMessage(data.translatedText);
     } catch (error) {
-      console.error('Error translating message:', error);
+      console.error('Error translating input:', error);
+    } finally {
+      setTranslatingInput(false);
     }
   };
 
-  const sendMessage = async (contentOverride?: string) => {
-    const content = contentOverride || inputMessage;
-    if (!content.trim() || !selectedConversation || isSending) return;
+  const deleteMessage = async (messageId: string) => {
+    if (!selectedConversation) return;
+
+    // Immediately remove from UI (optimistic update)
+    setMessages((prev) => prev.filter(m => m.id !== messageId));
+
+    // Clear AI suggestion and reset tracking to regenerate with new context
+    setAiSuggestion(null);
+    setLastSuggestedMessageId(null);
+
+    // Also delete from database (fire and forget - UI already updated)
+    try {
+      await fetch(`/api/chat?messageId=${messageId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Error deleting message from database:', error);
+      // Note: We don't revert the UI change even if DB delete fails
+      // This ensures the regenerate feature works immediately
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || !selectedConversation || isSending) return;
 
     setIsSending(true);
-    shouldAutoScrollRef.current = true;
+    shouldAutoScrollRef.current = true; // Force scroll when admin sends message
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -251,7 +355,7 @@ export default function LeadManagementDashboard({
         body: JSON.stringify({
           conversationId: selectedConversation.id,
           senderId: managerId,
-          content,
+          content: inputMessage,
           isFromCustomer: false,
           targetLanguage: selectedConversation.customerLanguage,
         }),
@@ -260,10 +364,9 @@ export default function LeadManagementDashboard({
       const data = await response.json();
       setMessages((prev) => [...prev, data.message]);
       setInputMessage('');
-      setTranslatedInput('');
       setAiSuggestion(null);
-      setIsEditingAiSuggestion(false);
-      setShowDraftMergeOptions(false);
+      // Reset the suggestion tracking so new customer messages can trigger suggestions
+      // But keep lastSuggestedMessageId so we don't re-suggest for old messages
     } catch (error) {
       console.error('Error sending message:', error);
     } finally {
@@ -271,38 +374,6 @@ export default function LeadManagementDashboard({
     }
   };
 
-  const acceptAndSend = () => {
-    if (!aiSuggestion) return;
-    sendMessage(aiSuggestion.suggestedReply);
-  };
-
-  const editSuggestion = () => {
-    if (!aiSuggestion) return;
-    setInputMessage(aiSuggestion.suggestedReply);
-    setIsEditingAiSuggestion(true);
-    setShowDraftMergeOptions(false);
-  };
-
-  const replaceWithSuggestion = () => {
-    if (!aiSuggestion) return;
-    setInputMessage(aiSuggestion.suggestedReply);
-    setAiSuggestion(null);
-    setShowDraftMergeOptions(false);
-  };
-
-  const addSuggestionOnTop = () => {
-    if (!aiSuggestion) return;
-    setInputMessage((prev) => `${aiSuggestion.suggestedReply}\n\n${prev}`.trim());
-    setAiSuggestion(null);
-    setShowDraftMergeOptions(false);
-  };
-
-  const addSuggestionBelow = () => {
-    if (!aiSuggestion) return;
-    setInputMessage((prev) => `${prev}\n\n${aiSuggestion.suggestedReply}`.trim());
-    setAiSuggestion(null);
-    setShowDraftMergeOptions(false);
-  };
 
   // Helper function to check if conversation has unread customer message
   const hasUnreadMessage = (conv: Conversation) => {
@@ -334,6 +405,7 @@ export default function LeadManagementDashboard({
       conv.customer.phone?.toLowerCase().includes(query)
     );
   });
+
 
   return (
     <div className="flex h-screen zoya-chat-surface">
@@ -546,10 +618,17 @@ export default function LeadManagementDashboard({
                   </div>
                 )}
                 <button
-                  onClick={() => fetchMessages(selectedConversation.id)}
-                  className="p-2 rounded-lg transition-colors zoya-btn-icon"
+                  onClick={() => {
+                    // Regenerate AI suggestion for the last customer message
+                    setAiSuggestion(null);
+                    setLastSuggestedMessageId(null);
+                    getAISuggestion();
+                  }}
+                  disabled={isLoadingSuggestion || messages.filter(m => m.isFromCustomer).length === 0}
+                  className="p-2 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Regenerate AI suggestion"
                 >
-                  <RefreshCw className="w-5 h-5" />
+                  <RefreshCw className={`w-5 h-5 text-amber-600 ${isLoadingSuggestion ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
@@ -594,16 +673,56 @@ export default function LeadManagementDashboard({
                             : 'zoya-bubble-agent text-[var(--foreground)]'
                         }`}
                       >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-semibold mb-1 opacity-70">
+                            {message.sender.name}
+                            {message.isFromCustomer && message.originalLanguage !== 'en' && (
+                              <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                {message.originalLanguage.toUpperCase()}
+                              </span>
+                            )}
+                          </p>
+                          {/* Translate button for customer messages in non-English */}
+                          {message.isFromCustomer && message.originalLanguage !== 'en' && (
+                            <button
+                              onClick={() => toggleMessageTranslation(message.id)}
+                              disabled={translatingMessageId === message.id}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50 flex items-center gap-1"
+                              title={showTranslations.has(message.id) ? "Hide translation" : "Show English translation"}
+                            >
+                              {translatingMessageId === message.id ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Translating...
+                                </>
+                              ) : (
+                                <>
+                                  <Languages className="w-3 h-3" />
+                                  {showTranslations.has(message.id) ? 'Hide' : 'Translate'}
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
                         <MessageContent
                           content={message.content}
                           className="text-sm whitespace-pre-wrap break-words"
                         />
-                        {message.translatedContent && message.content !== message.translatedContent && (
-                          <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--zoya-border-light)' }}>
-                            <MessageContent
-                              content={message.translatedContent}
-                              className="text-xs opacity-75 italic"
-                            />
+                        {/* Show translation if toggled */}
+                        {showTranslations.has(message.id) && (
+                          <div className="mt-2 pt-2 border-t border-blue-100 bg-blue-50 px-3 py-2 -mx-4 -mb-3 rounded-b-lg">
+                            <p className="text-xs font-semibold text-blue-700 mb-1">English Translation:</p>
+                            {message.translatedContent ? (
+                              <MessageContent
+                                content={message.translatedContent}
+                                className="text-sm text-gray-800"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span className="text-xs">Translating...</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -620,155 +739,104 @@ export default function LeadManagementDashboard({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* AI Suggestion Panel */}
-            {aiSuggestion && (
-              <div className="zoya-ai-panel px-4 py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" style={{ color: 'var(--zoya-gold)' }} />
-                    <span className="text-sm font-semibold" style={{ color: 'var(--zoya-gold)' }}>
-                      AI Suggested Response
-                    </span>
-                  </div>
-                  <span className="text-sm font-bold" style={{ color: 'var(--zoya-gold)' }}>
-                    {(aiSuggestion.confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
-
-                {isEditingAiSuggestion ? (
-                  <textarea
-                    ref={textareaRef}
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    className="w-full text-sm text-[var(--foreground)] leading-relaxed mb-3 p-3 rounded-lg border resize-none zoya-input"
-                    style={{ borderColor: 'var(--zoya-gold)', minHeight: '80px', maxHeight: '200px' }}
-                    disabled={isSending}
-                    autoFocus
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={editSuggestion}
-                    title="Click to edit suggestion"
-                    className="w-full text-left text-sm text-[var(--foreground)] leading-relaxed mb-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-black/5"
-                    style={{ borderColor: 'var(--zoya-border-light)' }}
-                  >
-                    {aiSuggestion.suggestedReply}
-                  </button>
-                )}
-
-                {(() => {
-                  const hasActuallyEdited = isEditingAiSuggestion &&
-                    inputMessage.trim() !== aiSuggestion.suggestedReply.trim();
-
-                  return (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        {/* TODO: Temporarily disabled.
-                            "Why did you edit?" feedback UI triggers when a meaningful change is made.
-                            We'll re-enable this later; for now we allow sending edits without collecting a reason. */}
-                        <span />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {showDraftMergeOptions && !isEditingAiSuggestion ? (
-                          <>
-                            <button
-                              onClick={replaceWithSuggestion}
-                              className="px-3 py-2 text-xs font-medium rounded-lg border transition-colors hover:bg-black/5"
-                              style={{ borderColor: 'var(--zoya-border)', color: 'var(--foreground)' }}
-                            >
-                              Replace
-                            </button>
-                            <button
-                              onClick={addSuggestionOnTop}
-                              className="px-3 py-2 text-xs font-medium rounded-lg border transition-colors hover:bg-black/5"
-                              style={{ borderColor: 'var(--zoya-border)', color: 'var(--foreground)' }}
-                            >
-                              Add on Top
-                            </button>
-                            <button
-                              onClick={addSuggestionBelow}
-                              className="px-3 py-2 text-xs font-medium rounded-lg border transition-colors hover:bg-black/5"
-                              style={{ borderColor: 'var(--zoya-border)', color: 'var(--foreground)' }}
-                            >
-                              Add Below
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                translateMessage(
-                                  isEditingAiSuggestion ? undefined : aiSuggestion.suggestedReply
-                                )
-                              }
-                              disabled={
-                                isSending ||
-                                (isEditingAiSuggestion
-                                  ? !inputMessage.trim()
-                                  : !aiSuggestion.suggestedReply.trim())
-                              }
-                              className="p-2.5   rounded-lg transition-colors zoya-btn-icon cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Preview Translation"
-                            >
-                              <Languages className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={hasActuallyEdited ? () => sendMessage() : acceptAndSend}
-                              disabled={hasActuallyEdited ? (!inputMessage.trim() || isSending) : isSending}
-                              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              style={{ background: 'var(--zoya-gold)' }}
-                            >
-                              {isSending ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Check className="w-3.5 h-3.5" />
-                              )}
-                              {hasActuallyEdited ? 'Send Edited' : 'Accept & Send'}
-                            </button>
-                          </>
-                        )}
-                      </div>
+             {/* AI Suggestion Panel */}
+             {aiSuggestion && (
+              <div className="bg-amber-50 border-t border-amber-200 p-4">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-amber-600 mt-1" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-800">
+                        AI Suggested Reply (Confidence: {(aiSuggestion.confidence * 100).toFixed(0)}%)
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Copy AI suggestion to input box
+                          setInputMessage(aiSuggestion.suggestedReply);
+                          // Focus the textarea
+                          textareaRef.current?.focus();
+                        }}
+                        className="px-3 py-1 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 transition-colors flex items-center gap-1"
+                      >
+                        <Send className="w-3 h-3" />
+                        Use this reply
+                      </button>
                     </div>
-                  );
-                })()}
-
-                {translatedInput && (
-                  <div className="mt-2 p-3 rounded-lg" style={{ background: 'var(--zoya-gold-bg)' }}>
-                    <p className="text-xs font-semibold mb-1 text-[var(--zoya-gold)]">
-                      Translation to {selectedConversation.customerLanguage.toUpperCase()}:
-                    </p>
-                    <p className="text-sm text-[var(--foreground)]">{translatedInput}</p>
+                    <div className="text-sm text-gray-700 bg-white p-3 rounded-lg shadow-sm">
+                      <MessageContent
+                        content={aiSuggestion.suggestedReply}
+                        className="text-sm text-gray-700"
+                      />
+                    </div>
+                    {aiSuggestion.relatedProducts.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-gray-700 mb-2">Related Products:</p>
+                        <div className="space-y-2">
+                          {aiSuggestion.relatedProducts.map((product, idx) => (
+                            <div key={idx} className="text-xs bg-white p-2 rounded">
+                              <span className="font-medium">{product.name}</span> -{' '}
+                              {product.currency} {product.price.toLocaleString()}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             )}
 
-            {/* Manual input — shown when no AI suggestion is available */}
-            {(!aiSuggestion || showDraftMergeOptions) && (
-              <div className="border-t px-4 py-3" style={{ borderColor: 'var(--zoya-border-light)', background: 'var(--zoya-bg-soft)' }}>
+            {/* Input Area */}
+            <div className="bg-white border-t p-4">
+              {/* Translate button info banner */}
+              {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
+                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-blue-600" />
+                    <span className="text-blue-800">
+                      Customer speaks <strong>{selectedConversation.customerLanguage.toUpperCase()}</strong>
+                    </span>
+                  </div>
+                  <button
+                    onClick={translateInputToCustomerLanguage}
+                    disabled={translatingInput}
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs font-medium"
+                  >
+                    {translatingInput ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Translating...
+                      </>
+                    ) : (
+                      <>
+                        <Languages className="w-3 h-3" />
+                        Translate to {selectedConversation.customerLanguage.toUpperCase()}
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-2">
                 <textarea
                   ref={textareaRef}
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Type your reply..."
-                  className="w-full text-sm text-[var(--foreground)] leading-relaxed mb-3 p-3 rounded-lg border resize-none zoya-input"
-                  style={{ borderColor: 'var(--zoya-border-light)', minHeight: '80px', maxHeight: '200px' }}
+                  placeholder="Type your reply in English..."
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-transparent resize-none"
+                  rows={3}
                   disabled={isSending}
+                  onKeyDown={(e) => {
+                    // Send message on Ctrl+Enter or Cmd+Enter
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
                 />
                 <div className="flex items-center justify-end gap-2">
                   <button
-                    type="button"
-                    onClick={() => translateMessage()}
-                    disabled={!inputMessage.trim() || isSending}
-                    className="p-2.5 rounded-lg transition-colors zoya-btn-icon cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Preview Translation"
-                  >
-                    <Languages className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => sendMessage()}
+                    onClick={sendMessage}
                     disabled={!inputMessage.trim() || isSending}
                     className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: 'var(--zoya-gold)' }}
@@ -782,7 +850,7 @@ export default function LeadManagementDashboard({
                   </button>
                 </div>
               </div>
-            )}
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[var(--zoya-accent)]">

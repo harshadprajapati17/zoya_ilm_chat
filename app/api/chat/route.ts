@@ -128,3 +128,31 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// DELETE /api/chat?messageId=xxx - Delete a message
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const messageId = searchParams.get('messageId');
+
+    if (!messageId) {
+      return NextResponse.json(
+        { error: 'Message ID required' },
+        { status: 400 }
+      );
+    }
+
+    // Delete the message
+    await prisma.message.delete({
+      where: { id: messageId },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete message' },
+      { status: 500 }
+    );
+  }
+}
