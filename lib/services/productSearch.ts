@@ -47,9 +47,30 @@ async function fallbackKeywordSearch(
   const categoryKeywords = ['ring', 'necklace', 'bangle', 'bracelet', 'earring', 'pendant', 'chain'];
   const foundCategory = categoryKeywords.find(cat => lowerQuery.includes(cat));
 
-  // Extract price limit (look for numbers)
-  const priceMatch = lowerQuery.match(/(\d+)/g);
-  const priceLimit = priceMatch ? Math.max(...priceMatch.map(Number)) : null;
+  // Extract price limit (handle Indian numbering: lakhs, crores)
+  let priceLimit: number | null = null;
+
+  // Check for "X lakh" or "X lakhs" pattern
+  const lakhMatch = lowerQuery.match(/(\d+(?:\.\d+)?)\s*(?:lakh|lakhs?)/i);
+  if (lakhMatch) {
+    priceLimit = parseFloat(lakhMatch[1]) * 100000; // Convert lakhs to rupees
+  } else {
+    // Check for "X crore" or "X crores" pattern
+    const croreMatch = lowerQuery.match(/(\d+(?:\.\d+)?)\s*(?:crore|crores?)/i);
+    if (croreMatch) {
+      priceLimit = parseFloat(croreMatch[1]) * 10000000; // Convert crores to rupees
+    } else {
+      // Fall back to extracting plain numbers
+      const priceMatch = lowerQuery.match(/(\d+(?:,\d{3})*)/g);
+      if (priceMatch) {
+        // Remove commas and find the largest number (likely the price)
+        const numbers = priceMatch.map(n => parseInt(n.replace(/,/g, '')));
+        priceLimit = Math.max(...numbers);
+      }
+    }
+  }
+
+  console.log(`[Product Search] Query: "${query}", Category: ${foundCategory || 'none'}, Price limit: ${priceLimit ? priceLimit.toLocaleString() : 'none'}`);
 
   // Build search conditions
   const whereConditions: any = {};

@@ -1,6 +1,7 @@
 import { generateChatCompletion } from './openai';
 import { searchProducts, Product } from './productSearch';
 import { searchStores, getProductAvailability, getStoresByCity, Store } from './storeSearch';
+import { getEnhancedPromptInstructions, getSimilarPastEdits } from './aiFeedbackLearning';
 
 export interface SuggestionResponse {
   suggestedReply: string;
@@ -14,6 +15,10 @@ export async function generateReplySuggestion(
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
 ): Promise<SuggestionResponse> {
   try {
+    // Get AI learning insights from past feedback
+    const enhancedInstructions = await getEnhancedPromptInstructions();
+    const similarPastEdits = await getSimilarPastEdits(customerMessage, 3);
+
     const lowerMessage = customerMessage.toLowerCase();
 
     // Extract context from conversation history (product names, categories mentioned)
@@ -70,7 +75,22 @@ export async function generateReplySuggestion(
     let contextualPriceRange = null;
     for (const msg of recentHistory.reverse()) {
       const msgLower = msg.content.toLowerCase();
-      // Look for price mentions
+
+      // Check for "X lakh" or "X lakhs" pattern first
+      const lakhMatch = msgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lakhs?)/i);
+      if (lakhMatch) {
+        contextualPriceRange = parseFloat(lakhMatch[1]) * 100000; // Convert lakhs to rupees
+        break;
+      }
+
+      // Check for "X crore" or "X crores" pattern
+      const croreMatch = msgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:crore|crores?)/i);
+      if (croreMatch) {
+        contextualPriceRange = parseFloat(croreMatch[1]) * 10000000; // Convert crores to rupees
+        break;
+      }
+
+      // Fall back to plain numbers
       const pricePatterns = [
         /(?:under|below|less than|up to)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi, // "under INR 50,000"
         /(?:around|about|approximately)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi, // "around 1,00,000"
@@ -88,6 +108,8 @@ export async function generateReplySuggestion(
 
       if (contextualPriceRange) break;
     }
+
+    console.log(`[AI Suggestions] Extracted contextual price range: ${contextualPriceRange ? 'INR ' + contextualPriceRange.toLocaleString() : 'none'}`);
 
     // Build enhanced search query with context
     let enhancedQuery = customerMessage;
@@ -126,15 +148,14 @@ export async function generateReplySuggestion(
     const effectiveCategory = category || categoryFromContext;
 
     // Step 1: Search based on query type
-    if (isStoreQuery && city && effectiveCategory) {
-      // Query for product availability at specific location (with contextual category)
-      productAvailability = await getProductAvailability(effectiveCategory, city, 3);
-      products = productAvailability.map(pa => pa.product as any);
-    } else if (isStoreQuery && city && contextualProductName) {
-      // User asking about specific product at location (e.g., "where can I buy this necklace in Mumbai?")
+    if (contextualProductName && hasReference) {
+      // User is asking about a specific product they mentioned earlier
+      // e.g., "tell me about this", "how can I buy this", "what's the price of that bracelet"
+      console.log(`[AI Suggestions] User referencing product: "${contextualProductName}"`);
       products = await searchProducts(contextualProductName, 5);
-      if (products.length > 0) {
-        // Get availability for this specific product
+
+      // If they're also asking about location/stores, get availability
+      if (isStoreQuery && city && products.length > 0) {
         const productCategory = products[0].category;
         productAvailability = await getProductAvailability(productCategory, city, 5);
         // Filter to only include the referenced product
@@ -143,12 +164,21 @@ export async function generateReplySuggestion(
         );
         products = productAvailability.map(pa => pa.product as any);
       }
+    } else if (isStoreQuery && city && effectiveCategory) {
+      // Query for product availability at specific location (with contextual category)
+      productAvailability = await getProductAvailability(effectiveCategory, city, 3);
+      products = productAvailability.map(pa => pa.product as any);
     } else if (isStoreQuery && city) {
       // Query for stores in a specific city
       stores = await getStoresByCity(city);
+      console.log(`[AI Suggestions] Store query for city: "${city}" - Found ${stores.length} stores`);
+      if (stores.length > 0) {
+        console.log(`[AI Suggestions] Stores:`, stores.map(s => `${s.storeName} in ${s.city}`));
+      }
     } else if (isStoreQuery) {
-      // General store query
+      // General store query - might be asking "where can I buy" without specifying product
       stores = await searchStores(enhancedQuery, 5);
+      console.log(`[AI Suggestions] General store query: "${enhancedQuery}" - Found ${stores.length} stores`);
     } else {
       // Regular product search - use enhanced query with context
       products = await searchProducts(enhancedQuery, 3);
@@ -160,15 +190,17 @@ export async function generateReplySuggestion(
         (p) => {
           // Parse image URLs from JSON if available
           let imageUrl = null;
-          if (p.productThumbnails) {
+          // Try productThumbnails first, then fallback to productImages
+          const imageSource = p.productThumbnails || (p as any).productImages;
+          if (imageSource) {
             try {
-              const thumbnails = JSON.parse(p.productThumbnails);
-              if (Array.isArray(thumbnails) && thumbnails.length > 0) {
-                imageUrl = thumbnails[0];
+              const images = JSON.parse(imageSource);
+              if (Array.isArray(images) && images.length > 0) {
+                imageUrl = images[0];
               }
             } catch (e) {
               // If parsing fails, assume it's a single URL
-              imageUrl = p.productThumbnails;
+              imageUrl = imageSource;
             }
           }
 
@@ -209,14 +241,16 @@ Country: ${s.country}`
     const availabilityContext = productAvailability
       .map((pa) => {
         let imageUrl = null;
-        if (pa.product.productThumbnails) {
+        // Try productThumbnails first, then fallback to productImages
+        const imageSource = pa.product.productThumbnails || (pa.product as any).productImages;
+        if (imageSource) {
           try {
-            const thumbnails = JSON.parse(pa.product.productThumbnails);
-            if (Array.isArray(thumbnails) && thumbnails.length > 0) {
-              imageUrl = thumbnails[0];
+            const images = JSON.parse(imageSource);
+            if (Array.isArray(images) && images.length > 0) {
+              imageUrl = images[0];
             }
           } catch (e) {
-            imageUrl = pa.product.productThumbnails;
+            imageUrl = imageSource;
           }
         }
 
@@ -236,24 +270,82 @@ ${storeList}`;
       })
       .join('\n\n---\n\n');
 
-    // Step 3: Create system prompt with appropriate context
+    // Step 3: Handle empty search results with hard-coded responses (prevents hallucination)
+    // If user asked for products but we found none, return a helpful message WITHOUT calling LLM
+    // EXCEPTION: If they're asking about a specific product reference, let LLM handle it (might be asking for details)
+    if (!isStoreQuery && products.length === 0 && productAvailability.length === 0 && !contextualProductName) {
+      // User wanted products but none found
+      let noProductMessage = "I'd love to help you find the perfect piece! ";
+
+      if (category && contextualPriceRange) {
+        // They specified both category and budget
+        noProductMessage += `Unfortunately, I don't see any ${category}s under INR ${contextualPriceRange.toLocaleString()} in our current inventory. `;
+
+        // Try to find products in that category without price filter
+        const categoryProducts = await searchProducts(category, 3);
+        if (categoryProducts.length > 0) {
+          const lowestPrice = Math.min(...categoryProducts.map(p => p.price));
+          noProductMessage += `However, we have beautiful ${category}s starting from INR ${lowestPrice.toLocaleString()}. Would you like to see those options? `;
+        }
+
+        noProductMessage += `\n\nAlternatively, I can show you other jewelry pieces within your budget of INR ${contextualPriceRange.toLocaleString()}. What would you prefer?`;
+      } else if (category) {
+        // Just category, no price
+        noProductMessage += `I'd be happy to show you our ${category} collection! Could you let me know your budget range so I can recommend the best options for you?`;
+      } else if (contextualPriceRange) {
+        // Just price, no category
+        noProductMessage += `I can definitely help you find beautiful jewelry within your budget of INR ${contextualPriceRange.toLocaleString()}! What type of piece are you looking for - rings, necklaces, bangles, or something else?`;
+      } else {
+        // Neither category nor price
+        noProductMessage += `What type of jewelry are you interested in, and do you have a budget in mind? This will help me show you the perfect pieces!`;
+      }
+
+      console.log(`[AI Suggestions] NO PRODUCTS FOUND - returning hard-coded response to prevent hallucination`);
+
+      return {
+        suggestedReply: noProductMessage,
+        confidence: 0.5,
+        relatedProducts: [],
+        reasoning: 'No products found matching criteria - returned helpful guidance without hallucination',
+      };
+    }
+
+    // Step 4: Create system prompt with appropriate context
     let contextSection = '';
 
     if (availabilityContext) {
       contextSection = `Product Availability Information:
 ${availabilityContext}`;
+      console.log(`[AI Suggestions] Using product availability context (${productAvailability.length} products)`);
     } else if (storeContext) {
       contextSection = `Available Stores:
 ${storeContext}`;
+      console.log(`[AI Suggestions] Using store context (${stores.length} stores):`);
+      console.log(storeContext.substring(0, 300) + '...');
     } else if (productContext) {
       contextSection = `Available Products:
 ${productContext}`;
+      console.log(`[AI Suggestions] Using product context (${products.length} products)`);
     } else {
       contextSection = 'No specific products or stores found for this query.';
+      console.log(`[AI Suggestions] No context found for query`);
+    }
+
+    // Build learning context from past edits
+    let learningContext = '';
+    if (enhancedInstructions) {
+      learningContext += `\n## AI IMPROVEMENT GUIDELINES\n${enhancedInstructions}\n`;
+    }
+
+    if (similarPastEdits.length > 0) {
+      learningContext += `\n## LEARNING FROM PAST EDITS\nHere are similar queries where managers improved AI responses. Learn from these patterns:\n\n`;
+      similarPastEdits.forEach((edit, i) => {
+        learningContext += `Example ${i + 1}:\nAI Original: "${edit.originalSuggestion.substring(0, 150)}..."\nManager's Edit: "${edit.editedContent.substring(0, 150)}..."\nEdit Type: ${edit.editCategory}\nKey Changes: ${edit.keyChanges.join(', ')}\n\n`;
+      });
     }
 
     const systemPrompt = `You are Aakriti, a personal jewelry consultant at Zoya. You're having a genuine conversation with a customer who's looking for beautiful jewelry pieces or store information. Write as if you're talking to a friend who trusts your taste and expertise.
-
+${learningContext}
 ${contextSection}
 
 CONVERSATION CONTEXT:
@@ -380,10 +472,26 @@ IMPORTANT:
 - Product names in bold: **Product Name**
 - Keep responses concise but warm - no long paragraphs
 
+CRITICAL - DATA ACCURACY:
+- **NEVER make up or hallucinate store information, addresses, or phone numbers**
+- **NEVER make up or hallucinate product names, prices, or images**
+- **ONLY use the EXACT store data provided in the "Available Stores" section above**
+- **ONLY use the EXACT product data provided in the "Available Products" section above**
+- **If no stores are listed in the context, DO NOT invent stores - instead ask the customer which city they're interested in**
+- **If no products are listed in the context, DO NOT invent products - instead:**
+  * Acknowledge the search criteria (budget, category, location)
+  * Politely inform that no products match those exact criteria
+  * Suggest alternatives: higher budget, different category, or visiting the store to see full inventory
+  * Example: "I don't see any bangles under INR 2,00,000 in our current inventory. However, we have beautiful bangles starting from INR 4,45,000. Would you like to see those, or perhaps explore a different category within your budget?"
+- **Every store address, name, and contact detail MUST come directly from the provided context**
+- **Every product name, price, image URL, and product link MUST come directly from the provided context**
+- If you see "No specific products or stores found", it means there are NO products or stores to show - do not make up any information
+
 Remember:
 1. **ASK FIRST**: When you need information (especially location), ask clarifying questions before giving generic answers
 2. **BE CONVERSATIONAL**: Make questions feel natural, not like a form to fill out
-3. **BUILD RELATIONSHIPS**: You're not just sharing information, you're having a genuine conversation to understand and help the customer find exactly what they need`;
+3. **BUILD RELATIONSHIPS**: You're not just sharing information, you're having a genuine conversation to understand and help the customer find exactly what they need
+4. **USE ONLY PROVIDED DATA**: Never invent or hallucinate product names, store locations, addresses, or any other information not explicitly provided in the context`;
 
     // Step 4: Build messages array
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
