@@ -211,7 +211,6 @@ export default function LeadManagementDashboard({
 
       const data = await response.json();
       setAiSuggestion(data);
-      setShowDraftMergeOptions(inputMessageRef.current.trim().length > 0);
     } catch (error) {
       console.error('Error getting AI suggestion:', error);
     } finally {
@@ -746,9 +745,23 @@ export default function LeadManagementDashboard({
                 <div className="flex items-start gap-3">
                   <Sparkles className="w-5 h-5 text-amber-600 mt-1" />
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-800 mb-2">
-                      AI Suggested Reply (Confidence: {(aiSuggestion.confidence * 100).toFixed(0)}%)
-                    </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-800">
+                        AI Suggested Reply (Confidence: {(aiSuggestion.confidence * 100).toFixed(0)}%)
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Copy AI suggestion to input box
+                          setInputMessage(aiSuggestion.suggestedReply);
+                          // Focus the textarea
+                          textareaRef.current?.focus();
+                        }}
+                        className="px-3 py-1 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 transition-colors flex items-center gap-1"
+                      >
+                        <Send className="w-3 h-3" />
+                        Use this reply
+                      </button>
+                    </div>
                     <div className="text-sm text-gray-700 bg-white p-3 rounded-lg shadow-sm">
                       <MessageContent
                         content={aiSuggestion.suggestedReply}

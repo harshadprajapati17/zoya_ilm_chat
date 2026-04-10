@@ -72,41 +72,84 @@ export async function generateReplySuggestion(
     }
 
     // Extract price context from conversation history
+    // IMPORTANT: Only use price from context if:
+    // 1. Price is mentioned in current message, OR
+    // 2. Current message is a direct follow-up to price discussion (e.g., immediately after budget message)
     let contextualPriceRange = null;
-    for (const msg of recentHistory.reverse()) {
-      const msgLower = msg.content.toLowerCase();
 
-      // Check for "X lakh" or "X lakhs" pattern first
-      const lakhMatch = msgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lakhs?)/i);
-      if (lakhMatch) {
-        contextualPriceRange = parseFloat(lakhMatch[1]) * 100000; // Convert lakhs to rupees
-        break;
-      }
+    // First check if price is mentioned in the CURRENT message
+    const currentMsgLower = lowerMessage;
 
-      // Check for "X crore" or "X crores" pattern
-      const croreMatch = msgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:crore|crores?)/i);
-      if (croreMatch) {
-        contextualPriceRange = parseFloat(croreMatch[1]) * 10000000; // Convert crores to rupees
-        break;
-      }
+    // Check for "X lakh" or "X lakhs" pattern in current message
+    let currentPriceMatch = currentMsgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lakhs?)/i);
+    if (currentPriceMatch) {
+      contextualPriceRange = parseFloat(currentPriceMatch[1]) * 100000;
+    } else {
+      // Check for "X crore" or "X crores" pattern in current message
+      currentPriceMatch = currentMsgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:crore|crores?)/i);
+      if (currentPriceMatch) {
+        contextualPriceRange = parseFloat(currentPriceMatch[1]) * 10000000;
+      } else {
+        // Check for plain numbers in current message
+        const pricePatterns = [
+          /(?:under|below|less than|up to)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+          /(?:around|about|approximately)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+          /budget\s+(?:of|is)?\s*(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+        ];
 
-      // Fall back to plain numbers
-      const pricePatterns = [
-        /(?:under|below|less than|up to)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi, // "under INR 50,000"
-        /(?:around|about|approximately)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi, // "around 1,00,000"
-        /budget\s+(?:of|is)?\s*(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi, // "budget of 2,00,000"
-      ];
-
-      for (const pattern of pricePatterns) {
-        const matches = [...msg.content.matchAll(pattern)];
-        if (matches.length > 0) {
-          const priceStr = matches[0][1].replace(/,/g, '');
-          contextualPriceRange = parseInt(priceStr);
-          break;
+        for (const pattern of pricePatterns) {
+          const matches = [...customerMessage.matchAll(pattern)];
+          if (matches.length > 0) {
+            const priceStr = matches[0][1].replace(/,/g, '');
+            contextualPriceRange = parseInt(priceStr);
+            break;
+          }
         }
       }
+    }
 
-      if (contextualPriceRange) break;
+    // If no price in current message, check if current message is a DIRECT follow-up to price discussion
+    // Only look at the LAST user message (not all history) to avoid carrying over old budget
+    if (!contextualPriceRange && recentHistory.length >= 2) {
+      // Get the last user message (before current one)
+      const lastUserMessage = [...recentHistory].reverse().find(msg => msg.role === 'user');
+
+      if (lastUserMessage) {
+        const lastMsgLower = lastUserMessage.content.toLowerCase();
+
+        // Check if the LAST message mentioned a budget AND current message is a simple follow-up
+        const isBudgetInLastMessage = /(?:budget|price|under|below|less than|up to|lakh|crore|inr|rs\.?|₹)/.test(lastMsgLower);
+        const isSimpleFollowUp = /^(show|tell|what|which|any|do you have|can you|i want|looking for)\b/i.test(customerMessage.trim());
+
+        // Only carry forward price if last message had budget AND current is a simple follow-up query
+        if (isBudgetInLastMessage && isSimpleFollowUp) {
+          // Extract price from last user message only
+          const lakhMatch = lastMsgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:lakh|lakhs?)/i);
+          if (lakhMatch) {
+            contextualPriceRange = parseFloat(lakhMatch[1]) * 100000;
+          } else {
+            const croreMatch = lastMsgLower.match(/(?:under|below|less than|up to|around|about|approximately|budget\s+(?:of|is)?)\s+(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(?:crore|crores?)/i);
+            if (croreMatch) {
+              contextualPriceRange = parseFloat(croreMatch[1]) * 10000000;
+            } else {
+              const pricePatterns = [
+                /(?:under|below|less than|up to)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+                /(?:around|about|approximately)\s+(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+                /budget\s+(?:of|is)?\s*(?:inr|rs\.?|₹)?\s*([0-9,]+)/gi,
+              ];
+
+              for (const pattern of pricePatterns) {
+                const matches = [...lastUserMessage.content.matchAll(pattern)];
+                if (matches.length > 0) {
+                  const priceStr = matches[0][1].replace(/,/g, '');
+                  contextualPriceRange = parseInt(priceStr);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
     console.log(`[AI Suggestions] Extracted contextual price range: ${contextualPriceRange ? 'INR ' + contextualPriceRange.toLocaleString() : 'none'}`);
@@ -147,6 +190,12 @@ export async function generateReplySuggestion(
     // Use category from context if available
     const effectiveCategory = category || categoryFromContext;
 
+    // Detect general browsing queries (what do you have, show me jewelry, etc.)
+    const isBrowsingQuery = /\b(what|which|show|browse|see|view|have|sell|available|offer|collection|catalog|products?|items?|ornaments?|jewelry|jewellery)\b/i.test(lowerMessage)
+      && !effectiveCategory
+      && !contextualPriceRange
+      && lowerMessage.length < 50; // Short, general queries
+
     // Step 1: Search based on query type
     if (contextualProductName && hasReference) {
       // User is asking about a specific product they mentioned earlier
@@ -179,6 +228,21 @@ export async function generateReplySuggestion(
       // General store query - might be asking "where can I buy" without specifying product
       stores = await searchStores(enhancedQuery, 5);
       console.log(`[AI Suggestions] General store query: "${enhancedQuery}" - Found ${stores.length} stores`);
+    } else if (isBrowsingQuery) {
+      // General browsing query - show sample products from multiple categories
+      console.log(`[AI Suggestions] General browsing query detected: "${customerMessage}"`);
+      const categories = ['ring', 'necklace', 'bangle', 'earring', 'bracelet'];
+      const sampleProducts: Product[] = [];
+
+      // Get 1-2 products from each category
+      for (const cat of categories) {
+        const catProducts = await searchProducts(cat, 2);
+        sampleProducts.push(...catProducts);
+        if (sampleProducts.length >= 6) break; // Limit to 6 products total
+      }
+
+      products = sampleProducts.slice(0, 6);
+      console.log(`[AI Suggestions] Showing ${products.length} sample products from different categories`);
     } else {
       // Regular product search - use enhanced query with context
       products = await searchProducts(enhancedQuery, 3);
@@ -272,9 +336,9 @@ ${storeList}`;
 
     // Step 3: Handle empty search results with hard-coded responses (prevents hallucination)
     // If user asked for products but we found none, return a helpful message WITHOUT calling LLM
-    // EXCEPTION: If they're asking about a specific product reference, let LLM handle it (might be asking for details)
-    if (!isStoreQuery && products.length === 0 && productAvailability.length === 0 && !contextualProductName) {
-      // User wanted products but none found
+    // EXCEPTION: If they're asking about a specific product reference OR general browsing, let LLM handle it
+    if (!isStoreQuery && products.length === 0 && productAvailability.length === 0 && !contextualProductName && !isBrowsingQuery) {
+      // User wanted specific products but none found
       let noProductMessage = "I'd love to help you find the perfect piece! ";
 
       if (category && contextualPriceRange) {
@@ -296,7 +360,7 @@ ${storeList}`;
         // Just price, no category
         noProductMessage += `I can definitely help you find beautiful jewelry within your budget of INR ${contextualPriceRange.toLocaleString()}! What type of piece are you looking for - rings, necklaces, bangles, or something else?`;
       } else {
-        // Neither category nor price
+        // Neither category nor price - shouldn't reach here for browsing queries
         noProductMessage += `What type of jewelry are you interested in, and do you have a budget in mind? This will help me show you the perfect pieces!`;
       }
 
@@ -392,11 +456,13 @@ CRITICAL RULE - ASK BEFORE ANSWERING:
   * User: "can I see this in store?" → Ask: "Absolutely! Which city or area would work best for you?"
 
 **When customer's request is too broad or vague**:
-- Ask thoughtful questions to understand their needs better
+- If you have product data available, SHOW them sample products from different categories
+- If no product data is available, ask thoughtful questions to understand their needs better
 - Examples:
-  * User: "show me jewelry" → Ask: "I'd love to help! Are you looking for a ring, necklace, bangles, or something else?"
-  * User: "I need a gift" → Ask: "That's wonderful! Who is this gift for, and what's the occasion?"
-  * User: "what's good?" → Ask: "I have so many beautiful pieces to show you! What type of jewelry are you interested in?"
+  * User: "show me jewelry" → If products available: Show a variety (rings, necklaces, bangles). If not: Ask "I'd love to help! Are you looking for a ring, necklace, bangles, or something else?"
+  * User: "what ornaments do you sell?" → If products available: Show sample products across categories. If not: Ask about specific preferences
+  * User: "I need a gift" → Show options and ask: "That's wonderful! Who is this gift for, and what's the occasion?"
+  * User: "what's good?" → Show popular pieces and ask: "Here are some of our beautiful pieces! What type of jewelry catches your eye?"
 
 **When you could provide a better answer with more details**:
 - Ask about preferences, budget, occasion, or style

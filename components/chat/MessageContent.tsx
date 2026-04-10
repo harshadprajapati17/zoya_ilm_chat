@@ -46,7 +46,7 @@ export default function MessageContent({
               key={key++}
               src={imageUrl}
               alt={altText}
-              className="max-w-xs md:max-w-sm rounded-lg my-2 shadow-md"
+              className="w-40 h-40 object-cover rounded-lg my-2 shadow-md"
               loading="lazy"
             />
           );
