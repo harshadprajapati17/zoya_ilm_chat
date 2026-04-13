@@ -6,13 +6,15 @@ import {
   Send,
   Sparkles,
   Languages,
-  Clock,
-  User,
   RefreshCw,
   Loader2,
   Search,
-  Trash2,
-  Phone
+  Phone,
+  Pencil,
+  ChevronDown,
+  Copy,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import MessageContent from './MessageContent';
 
@@ -95,6 +97,13 @@ export default function LeadManagementDashboard({
   const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
   const [showTranslations, setShowTranslations] = useState<Set<string>>(new Set());
   const [translatingInput, setTranslatingInput] = useState(false);
+  const [aiReplyEditMode, setAiReplyEditMode] = useState(false);
+  const [aiReplyComposerTab, setAiReplyComposerTab] = useState<'edit' | 'preview'>('edit');
+  const [relatedProductsOpen, setRelatedProductsOpen] = useState(true);
+  /** `inline` = AI owns composer; `overlay` = user had a draft when AI arrived — show suggestion above input with Copy / Insert */
+  const [aiComposerLayout, setAiComposerLayout] = useState<'inline' | 'overlay'>('inline');
+  /** Expanded = taller max-height on the AI reply panel; scroll stays inside the panel (not the page). */
+  const [aiSuggestionExpanded, setAiSuggestionExpanded] = useState(false);
 
   // Feedback tracking state
   const [usedAISuggestion, setUsedAISuggestion] = useState<{
@@ -106,6 +115,7 @@ export default function LeadManagementDashboard({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<Message[]>([]);
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
   const inputMessageRef = useRef('');
@@ -113,6 +123,54 @@ export default function LeadManagementDashboard({
   useEffect(() => {
     inputMessageRef.current = inputMessage;
   }, [inputMessage]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // When a new AI suggestion arrives: keep user draft + overlay, or replace input (inline)
+  useEffect(() => {
+    if (!aiSuggestion) return;
+    const hadDraft = inputMessageRef.current.trim().length > 0;
+    setAiReplyEditMode(false);
+    setAiReplyComposerTab('edit');
+    setRelatedProductsOpen(true);
+
+    setAiSuggestionExpanded(false);
+    if (hadDraft) {
+      setAiComposerLayout('overlay');
+      setUsedAISuggestion(null);
+    } else {
+      setAiComposerLayout('inline');
+      setInputMessage(aiSuggestion.suggestedReply);
+      const lastCustomerMessage = messagesRef.current.filter((m) => m.isFromCustomer).pop();
+      setUsedAISuggestion({
+        suggestedReplyId: aiSuggestion.suggestedReplyId || null,
+        originalSuggestion: aiSuggestion.suggestedReply,
+        customerQuery: lastCustomerMessage?.content || '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-init only when suggestion id/text changes
+  }, [aiSuggestion?.suggestedReplyId, aiSuggestion?.suggestedReply]);
+
+  useEffect(() => {
+    if (!aiSuggestion) {
+      setAiReplyEditMode(false);
+      setAiReplyComposerTab('edit');
+      setAiComposerLayout('inline');
+      setAiSuggestionExpanded(false);
+    }
+  }, [aiSuggestion]);
+
+  useEffect(() => {
+    setAiSuggestionExpanded(false);
+  }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    if (aiReplyEditMode && aiReplyComposerTab === 'edit') {
+      textareaRef.current?.focus();
+    }
+  }, [aiReplyEditMode, aiReplyComposerTab]);
 
   // Smart auto-scroll - only scroll if user is at bottom or new message added
   useEffect(() => {
@@ -439,7 +497,9 @@ export default function LeadManagementDashboard({
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    const maxHeight = 200; // ~10 lines
+    const vhCap =
+      typeof window !== 'undefined' ? Math.floor(window.innerHeight * 0.32) : 240;
+    const maxHeight = Math.min(240, Math.max(100, vhCap));
     textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   };
@@ -459,6 +519,81 @@ export default function LeadManagementDashboard({
     );
   });
 
+  const copyAiSuggestion = async () => {
+    if (!aiSuggestion) return;
+    try {
+      await navigator.clipboard.writeText(aiSuggestion.suggestedReply);
+    } catch {
+      console.error('Clipboard copy failed');
+    }
+  };
+
+  const insertAiSuggestionOverDraft = () => {
+    if (!aiSuggestion) return;
+    setInputMessage(aiSuggestion.suggestedReply);
+    setAiComposerLayout('inline');
+    setAiReplyEditMode(false);
+    setAiReplyComposerTab('edit');
+    setAiSuggestionExpanded(false);
+    setRelatedProductsOpen(true);
+    const lastCustomerMessage = messagesRef.current.filter((m) => m.isFromCustomer).pop();
+    setUsedAISuggestion({
+      suggestedReplyId: aiSuggestion.suggestedReplyId || null,
+      originalSuggestion: aiSuggestion.suggestedReply,
+      customerQuery: lastCustomerMessage?.content || '',
+    });
+  };
+
+  const relatedProductsCollapsibleBlock =
+    aiSuggestion && aiSuggestion.relatedProducts.length > 0 ? (
+      <div className="overflow-hidden rounded-lg border border-[#E8E4DF] bg-white/60">
+        <button
+          type="button"
+          onClick={() => setRelatedProductsOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-semibold text-[var(--zoya-accent)] transition-colors hover:bg-[#f3efe9]"
+          aria-expanded={relatedProductsOpen}
+          aria-controls="related-products-panel"
+          id="related-products-toggle"
+        >
+          <span>
+            Related products
+            <span className="font-normal text-[var(--zoya-muted)]">
+              {' '}
+              ({aiSuggestion.relatedProducts.length})
+            </span>
+          </span>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-[var(--zoya-muted)] transition-transform duration-200 ${
+              relatedProductsOpen ? 'rotate-180' : ''
+            }`}
+            aria-hidden
+          />
+        </button>
+        {relatedProductsOpen && (
+          <div
+            id="related-products-panel"
+            role="region"
+            aria-labelledby="related-products-toggle"
+            className="border-t border-[#E8E4DF] px-3 pb-3 pt-2"
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {aiSuggestion.relatedProducts.map((product, idx) => (
+                <div
+                  key={idx}
+                  className="min-w-0 rounded border border-[#E0D9D2] bg-white px-2 py-1.5 text-xs leading-snug text-[var(--zoya-accent)]"
+                >
+                  <span className="font-medium">{product.name}</span>
+                  <span className="text-[var(--zoya-muted)]">
+                    {' '}
+                    — {product.currency} {product.price.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null;
 
   return (
     <div className="flex h-screen zoya-chat-surface">
@@ -640,8 +775,8 @@ export default function LeadManagementDashboard({
         </div>
       </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
+      {/* Chat Area — min-h-0 so messages + composer stay within h-screen */}
+      <div className="flex min-h-0 flex-1 flex-col">
         {selectedConversation ? (
           <>
             {/* Chat Header */}
@@ -672,7 +807,11 @@ export default function LeadManagementDashboard({
                 )}
                 <button
                   onClick={() => {
-                    // Regenerate AI suggestion for the last customer message
+                    // Regenerate: discard manager draft so the new suggestion uses inline
+                    // layout (AI reply in composer) instead of overlay + separate input.
+                    inputMessageRef.current = '';
+                    setInputMessage('');
+                    setUsedAISuggestion(null);
                     setAiSuggestion(null);
                     setLastSuggestedMessageId(null);
                     getAISuggestion();
@@ -687,7 +826,10 @@ export default function LeadManagementDashboard({
             </div>
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 zoya-chat-surface">
+            <div
+              ref={messagesContainerRef}
+              className="zoya-chat-surface min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+            >
               {messages.filter(m => m && m.id).map((message, index) => {
                 // Check if this is the start of a new session (different sessionId from previous message)
                 const isNewSession = index > 0 &&
@@ -792,70 +934,10 @@ export default function LeadManagementDashboard({
               <div ref={messagesEndRef} />
             </div>
 
-             {/* AI Suggestion Panel */}
-             {aiSuggestion && (
-              <div className="bg-amber-50 border-t border-amber-200 p-4">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-amber-600 mt-1" />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-semibold text-gray-800">
-                        AI Suggested Reply (Confidence: {(aiSuggestion.confidence * 100).toFixed(0)}%)
-                      </p>
-                      <button
-                        onClick={() => {
-                          // Copy AI suggestion to input box
-                          setInputMessage(aiSuggestion.suggestedReply);
-
-                          // Track that AI suggestion was used for feedback
-                          const lastCustomerMessage = messages
-                            .filter((m) => m.isFromCustomer)
-                            .pop();
-
-                          setUsedAISuggestion({
-                            suggestedReplyId: aiSuggestion.suggestedReplyId || null,
-                            originalSuggestion: aiSuggestion.suggestedReply,
-                            customerQuery: lastCustomerMessage?.content || '',
-                          });
-
-                          // Focus the textarea
-                          textareaRef.current?.focus();
-                        }}
-                        className="px-3 py-1 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 transition-colors flex items-center gap-1"
-                      >
-                        <Send className="w-3 h-3" />
-                        Use this reply
-                      </button>
-                    </div>
-                    <div className="text-sm text-gray-700 bg-white p-3 rounded-lg shadow-sm">
-                      <MessageContent
-                        content={aiSuggestion.suggestedReply}
-                        className="text-sm text-gray-700"
-                      />
-                    </div>
-                    {aiSuggestion.relatedProducts.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold text-gray-700 mb-2">Related Products:</p>
-                        <div className="space-y-2">
-                          {aiSuggestion.relatedProducts.map((product, idx) => (
-                            <div key={idx} className="text-xs bg-white p-2 rounded">
-                              <span className="font-medium">{product.name}</span> -{' '}
-                              {product.currency} {product.price.toLocaleString()}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Input Area */}
-            <div className="bg-white border-t p-4">
-              {/* Translate button info banner */}
+            {/* Reply composer: normal input while AI loads; AI suggestion replaces input when ready */}
+            <div className="shrink-0 border-t border-[#E8E4DF] bg-[#F8F5F2] p-4">
               {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
-                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
+                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <Languages className="w-4 h-4 text-blue-600" />
                     <span className="text-blue-800">
@@ -863,6 +945,7 @@ export default function LeadManagementDashboard({
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={translateInputToCustomerLanguage}
                     disabled={translatingInput}
                     className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs font-medium"
@@ -882,39 +965,255 @@ export default function LeadManagementDashboard({
                 </div>
               )}
 
-              <div className="flex gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Type your reply in English..."
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-transparent resize-none"
-                  rows={3}
-                  disabled={isSending}
-                  onKeyDown={(e) => {
-                    // Send message on Ctrl+Enter or Cmd+Enter
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                      e.preventDefault();
-                      sendMessage();
-                    }
-                  }}
-                />
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={sendMessage}
-                    disabled={!inputMessage.trim() || isSending}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: 'var(--zoya-gold)' }}
-                  >
-                    {isSending ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    Send
-                  </button>
+              {isLoadingSuggestion && !aiSuggestion && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-amber-900/80">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
+                  <span>Generating AI suggestion…</span>
                 </div>
-              </div>
+              )}
+
+              {aiSuggestion && aiComposerLayout === 'overlay' && (
+                <div className="mb-3 flex flex-col gap-3">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-3">
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-1 items-start gap-2">
+                        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-[var(--zoya-accent)]">
+                            AI suggested reply
+                            <span className="font-normal text-[var(--zoya-muted)]">
+                              {' '}
+                              ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
+                            </span>
+                          </p>
+                          <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
+                            Copy to paste after your message, or Insert to replace your draft.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAiSuggestionExpanded((e) => !e)}
+                        className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-amber-100/80 hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                        aria-expanded={aiSuggestionExpanded}
+                        title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
+                      >
+                        {aiSuggestionExpanded ? (
+                          <Minimize2 className="h-4 w-4" aria-hidden />
+                        ) : (
+                          <Maximize2 className="h-4 w-4" aria-hidden />
+                        )}
+                      </button>
+                    </div>
+                    <div
+                      className={`mb-3 overflow-y-auto overscroll-contain rounded-md border border-[#E8E4DF] bg-white px-3 py-2 ${
+                        aiSuggestionExpanded
+                          ? 'max-h-[min(55dvh,28rem)]'
+                          : 'max-h-[min(12rem,28dvh)]'
+                      }`}
+                    >
+                      <MessageContent
+                        content={aiSuggestion.suggestedReply}
+                        className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={copyAiSuggestion}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#C4B5A5] bg-white px-3 py-2 text-xs font-medium text-[var(--zoya-accent)] transition-colors hover:bg-[#faf8f6]"
+                      >
+                        <Copy className="h-3.5 w-3.5 shrink-0" />
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={insertAiSuggestionOverDraft}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#C4B5A5] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#b8a899]"
+                      >
+                        Insert
+                      </button>
+                    </div>
+                  </div>
+                  {relatedProductsCollapsibleBlock}
+                </div>
+              )}
+
+              {aiSuggestion && aiComposerLayout === 'inline' ? (
+                <div className="flex flex-col gap-3">
+                  {aiReplyEditMode ? (
+                    <>
+                      <div
+                        className="flex w-fit gap-1 rounded-lg border border-[#E0D9D2] bg-white/90 p-1"
+                        role="tablist"
+                        aria-label="Reply composer"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={aiReplyComposerTab === 'edit'}
+                          onClick={() => setAiReplyComposerTab('edit')}
+                          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                            aiReplyComposerTab === 'edit'
+                              ? 'bg-[#C4B5A5] text-white'
+                              : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                          }`}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={aiReplyComposerTab === 'preview'}
+                          onClick={() => setAiReplyComposerTab('preview')}
+                          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                            aiReplyComposerTab === 'preview'
+                              ? 'bg-[#C4B5A5] text-white'
+                              : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                          }`}
+                        >
+                          Preview
+                        </button>
+                      </div>
+                      {aiReplyComposerTab === 'edit' ? (
+                        <textarea
+                          ref={textareaRef}
+                          value={inputMessage}
+                          onChange={(e) => setInputMessage(e.target.value)}
+                          placeholder="Type your reply..."
+                          className="max-h-[min(15rem,32dvh)] min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                          rows={3}
+                          disabled={isSending}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                              e.preventDefault();
+                              sendMessage();
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="max-h-[min(15rem,32dvh)] min-h-[100px] overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3">
+                          {inputMessage.trim() ? (
+                            <MessageContent
+                              content={inputMessage}
+                              className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                            />
+                          ) : (
+                            <p className="text-sm text-[#A9A9A9]">Nothing to preview yet.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-1 items-start gap-2">
+                          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--zoya-accent)]">
+                              AI suggested reply
+                              <span className="font-normal text-[var(--zoya-muted)]">
+                                {' '}
+                                ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
+                              </span>
+                            </p>
+                            <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
+                              Click the reply below to edit, or send as-is.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAiSuggestionExpanded((e) => !e)}
+                          className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                          aria-expanded={aiSuggestionExpanded}
+                          title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
+                        >
+                          {aiSuggestionExpanded ? (
+                            <Minimize2 className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" aria-hidden />
+                          )}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAiReplyEditMode(true);
+                          setAiReplyComposerTab('edit');
+                        }}
+                        className={`group grid min-h-[100px] w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-[10px] border border-[#E0D9D2] bg-white text-left transition-colors hover:border-[#C4B5A5] hover:bg-[#faf8f6] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
+                          aiSuggestionExpanded
+                            ? 'max-h-[min(55dvh,28rem)]'
+                            : 'max-h-[min(15rem,32dvh)]'
+                        }`}
+                      >
+                        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-3 text-left">
+                          <MessageContent
+                            content={inputMessage}
+                            className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                          />
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5 border-t border-[#E8E4DF] bg-[#faf8f6] px-4 py-2 text-xs font-medium text-[#C4B5A5]">
+                          <Pencil className="h-3.5 w-3.5" />
+                          Click to edit
+                        </div>
+                      </button>
+                    </>
+                  )}
+
+                  {relatedProductsCollapsibleBlock}
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={sendMessage}
+                      disabled={!inputMessage.trim() || isSending}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C4B5A5] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#b8a899] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSending ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4 shrink-0" />
+                      )}
+                      Send
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <textarea
+                    ref={textareaRef}
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder="Type your reply..."
+                    className="max-h-[min(15rem,32dvh)] min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                    rows={3}
+                    disabled={isSending}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={sendMessage}
+                      disabled={!inputMessage.trim() || isSending}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C4B5A5] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#b8a899] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSending ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4 shrink-0" />
+                      )}
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
