@@ -10,10 +10,42 @@ export interface SuggestionResponse {
   reasoning: string;
 }
 
+/**
+ * TEMP / DEV ONLY — set to false (or remove the mock branch) before production.
+ *
+ * - `true`: Skips OpenAI; returns a fixed mock suggestion after a short delay (no API cost, predictable for UI work).
+ * - `false`: Runs the real pipeline (feedback learning, OpenAI completion, product/store search).
+ */
+const USE_DEV_MOCK_AI_SUGGESTION = false;
+
+const DEV_MOCK_SUGGESTED_REPLY = `That's a lovely idea! Here are a couple of stunning diamond rings that might be perfect for your father:
+
+1. **Infinite Arc Ring** - INR 1,84,636  
+   This one is absolutely stunning! It's crafted in 18K rose gold with a beautiful amethyst and diamonds totaling 0.18 carats. The design is elegant and unique!  
+   ![Product Image](https://www.zoya.in/dw/image/v2/BKCK_PRD/on/demandware.static/-/Sites-Tanishq-product-catalog/default/dw68019125/images/ZOYA/hi-res/ZLFL21FAAAA34_2.jpg?sw=115&sh=115)  
+   [View here](https://www.zoya.in/product/finger_ring-zlfl21faaaa34.html?lang=en_IN)
+
+2. **The Purple Prism** - INR 1,95,966  
+   I think you'll really love the design on this one! Made in 18K gold, it features an amethyst and diamonds totaling 0.24 carats. It's a statement piece that your father would cherish.  
+   ![Product Image](https://www.zoya.in/dw/image/v2/BKCK_PRD/on/demandware.static/-/Sites-Tanishq-product-catalog/default/dw09fb6d36/images/ZOYA/hi-res/ZLFL24FDFAA34.jpg?sw=115&sh=115)  
+   [View here](https://www.zoya.in/product/finger_ring-zlfl24fdfaa34.html?lang=en_IN)
+
+Would you like to know more about any of these rings or explore other options?`;
+
 export async function generateReplySuggestion(
   customerMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
 ): Promise<SuggestionResponse> {
+  if (USE_DEV_MOCK_AI_SUGGESTION) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    return {
+      suggestedReply: DEV_MOCK_SUGGESTED_REPLY,
+      confidence: 0.85,
+      relatedProducts: [],
+      reasoning: 'TEMP dev mock (no OpenAI) — revert before push',
+    };
+  }
+
   try {
     // Get AI learning insights from past feedback (gracefully handle errors)
     let enhancedInstructions = '';
