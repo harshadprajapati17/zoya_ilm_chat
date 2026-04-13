@@ -391,7 +391,12 @@ export default function ROIAnalyticsPage() {
                   stroke="#a67c52"
                   strokeWidth={2}
                   fill="url(#colorRate)"
-                  onClick={(data) => data && handleDayClick(data.day)}
+                  onClick={(_, index) => {
+                    const dataPoint = typeof index === 'number' ? acceptanceOverTime[index] : undefined;
+                    if (dataPoint) {
+                      handleDayClick(dataPoint.day);
+                    }
+                  }}
                   cursor="pointer"
                 />
               </AreaChart>
@@ -653,7 +658,12 @@ export default function ROIAnalyticsPage() {
                   dataKey="acceptanceRate"
                   radius={[0, 4, 4, 0]}
                   fill="#8b7355"
-                  onClick={(data) => handleCategoryClick(data.category)}
+                  onClick={(_, index) => {
+                    const dataPoint = typeof index === 'number' ? editFrequencyByCategory[index] : undefined;
+                    if (dataPoint) {
+                      handleCategoryClick(dataPoint.category);
+                    }
+                  }}
                   cursor="pointer"
                 >
                   {editFrequencyByCategory.map((entry, index) => (

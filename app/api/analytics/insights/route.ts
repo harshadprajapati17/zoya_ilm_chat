@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
     productDemand.sort((a, b) => b.percentage - a.percentage);
 
     // High intent customers (acceptance score > 0.7)
-    const highIntentCustomers = feedbacks.filter((f) => f.acceptanceScore > 0.7).length;
+    const highIntentCustomers = feedbacks.filter((f) => (f.acceptanceScore ?? 0) > 0.7).length;
     const qualifiedLeads = Math.round(totalConversations * 0.19); // ~19% qualified
     const likelyBuyers = Math.round(totalConversations * 0.086); // ~8.6%
     const lostOpportunities = Math.round(totalConversations * 0.027); // ~2.7%
@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
     };
 
     feedbacks.forEach((f) => {
-      if (f.acceptanceScore < 0.5) {
+      if ((f.acceptanceScore ?? 0) < 0.5) {
         const query = f.customerQuery?.toLowerCase() || '';
         if (query.includes('expensive') || query.includes('price')) {
           hesitationCounts['Price too high']++;

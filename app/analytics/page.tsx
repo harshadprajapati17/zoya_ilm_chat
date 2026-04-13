@@ -295,7 +295,10 @@ export default function AnalyticsPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(entry) => `${entry.category}: ${entry.percentage}%`}
+                  label={({ payload }) => {
+                    const categoryData = payload as AnalyticsData['categoryBreakdown'][number] | undefined;
+                    return categoryData ? `${categoryData.category}: ${categoryData.percentage}%` : '';
+                  }}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="count"
