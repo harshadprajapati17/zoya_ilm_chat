@@ -1,0 +1,805 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
+} from 'recharts';
+import { TrendingUp, TrendingDown, Clock, MessageSquare, ArrowLeft, X } from 'lucide-react';
+import Link from 'next/link';
+
+interface FeedbackDetail {
+  id: string;
+  originalSuggestion: string;
+  editedContent: string;
+  editCategory: string;
+  acceptanceScore: number;
+  customerQuery: string;
+  queryCategory: string;
+  createdAt: string;
+  editedBy: string;
+}
+
+interface ROIData {
+  summary: {
+    acceptanceRateCurrent: number;
+    acceptanceRatePrevious: number;
+    acceptanceRateChange: number;
+    editRateCurrent: number;
+    editRatePrevious: number;
+    editRateChange: number;
+    chatsPerRepCurrent: number;
+    chatsPerRepPrevious: number;
+    chatsPerRepChange: number;
+    timeSavedPerDay: number;
+  };
+  acceptanceOverTime: Array<{
+    day: number;
+    rate: number;
+  }>;
+  editReasonTrends: Array<{
+    day: number;
+    wrongTone: number;
+    wrongProduct: number;
+    missingDetails: number;
+    inaccurateInfo: number;
+  }>;
+  confidenceScore: {
+    current: number;
+    history: Array<{
+      day: number;
+      score: number;
+    }>;
+    autoSuggestThreshold: number;
+    autoSendThreshold: number;
+    afterHoursThreshold: number;
+  };
+  editFrequencyByCategory: Array<{
+    category: string;
+    acceptanceRate: number;
+    status: 'excellent' | 'good' | 'fair' | 'needs-work';
+    count: number;
+  }>;
+  rawFeedback: Array<FeedbackDetail>;
+}
+
+type TimeRange = 7 | 30 | 90 | 'custom';
+
+export default function ROIAnalyticsPage() {
+  const [data, setData] = useState<ROIData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<TimeRange>(90);
+  const [modalData, setModalData] = useState<{
+    title: string;
+    data: Array<FeedbackDetail>;
+    filter?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetchROIData();
+  }, [timeRange]);
+
+  const fetchROIData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const days = timeRange === 'custom' ? 90 : timeRange;
+      const response = await fetch(`/api/analytics/roi?days=${days}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ROI data: ${response.status}`);
+      }
+
+      const responseData = await response.json();
+      setData(responseData);
+    } catch (err) {
+      console.error('Error fetching ROI data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load ROI analytics');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto mb-4"></div>
+          <div className="text-xl text-gray-700">Loading ROI analytics...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center max-w-md">
+          <div className="text-xl text-red-600 mb-2">Failed to load ROI analytics</div>
+          <div className="text-sm text-gray-600 mb-4">{error || 'No data available'}</div>
+          <button
+            onClick={() => fetchROIData()}
+            className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const { summary, acceptanceOverTime, editReasonTrends, confidenceScore, editFrequencyByCategory, rawFeedback } = data;
+
+  // Handler functions for chart clicks
+  const handleCategoryClick = (category: string) => {
+    if (!rawFeedback) return;
+
+    // Filter by the computed queryCategory field from the backend
+    const filtered = rawFeedback.filter(f => f.queryCategory === category);
+
+    setModalData({
+      title: `${category} - Detailed Feedback Data`,
+      data: filtered,
+      filter: category,
+    });
+  };
+
+  const handleDayClick = (day: number) => {
+    if (!rawFeedback) return;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (timeRange === 'custom' ? 90 : timeRange) + day - 1);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 1);
+
+    const filtered = rawFeedback.filter(f => {
+      const feedbackDate = new Date(f.createdAt);
+      return feedbackDate >= startDate && feedbackDate < endDate;
+    });
+
+    setModalData({
+      title: `Day ${day} - Detailed Feedback Data`,
+      data: filtered,
+      filter: `Day ${day}`,
+    });
+  };
+
+  const handleEditCategoryClick = (editType: string) => {
+    if (!rawFeedback) return;
+
+    const categoryMap: Record<string, string[]> = {
+      'Wrong Tone': ['TONE_ADJUSTMENT'],
+      'Wrong Product': ['PRODUCT_CORRECTION'],
+      'Missing Details': ['LENGTH_PROBLEM', 'MINOR_EDIT'],
+      'Inaccurate Info': ['ACCURACY_ISSUE', 'LANGUAGE_QUALITY', 'COMPLETE_REWRITE'],
+    };
+
+    const filtered = rawFeedback.filter(f =>
+      categoryMap[editType]?.includes(f.editCategory)
+    );
+
+    setModalData({
+      title: `${editType} - Detailed Feedback Data`,
+      data: filtered,
+      filter: editType,
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <Link
+            href="/analytics"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back to Analytics
+          </Link>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-1">AI Performance & ROI</h1>
+              <p className="text-gray-600 text-sm">Investment impact analysis and trend insights</p>
+            </div>
+          </div>
+
+          {/* Time Range Selector */}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setTimeRange(7)}
+              className={`px-4 py-2 rounded text-sm font-medium transition ${
+                timeRange === 7
+                  ? 'bg-gray-800 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              Last 7 Days
+            </button>
+            <button
+              onClick={() => setTimeRange(30)}
+              className={`px-4 py-2 rounded text-sm font-medium transition ${
+                timeRange === 30
+                  ? 'bg-gray-800 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              Last 30 Days
+            </button>
+            <button
+              onClick={() => setTimeRange(90)}
+              className={`px-4 py-2 rounded text-sm font-medium transition ${
+                timeRange === 90
+                  ? 'bg-gray-800 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              Last 90 Days
+            </button>
+            <button
+              onClick={() => setTimeRange('custom')}
+              className={`px-4 py-2 rounded text-sm font-medium transition ${
+                timeRange === 'custom'
+                  ? 'bg-gray-800 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              Custom Range
+            </button>
+          </div>
+        </div>
+
+        {/* Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Acceptance Rate Growth */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
+              Acceptance Rate Growth
+            </h3>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.acceptanceRatePrevious}%
+              </span>
+              <span className="text-gray-400">→</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.acceptanceRateCurrent}%
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-sm">
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              <span className="text-green-600 font-medium">
+                +{summary.acceptanceRateChange.toFixed(1)}% improvement
+              </span>
+            </div>
+          </div>
+
+          {/* Edit Rate Decline */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
+              Edit Rate Decline
+            </h3>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.editRatePrevious}%
+              </span>
+              <span className="text-gray-400">→</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.editRateCurrent}%
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-sm">
+              <TrendingDown className="w-4 h-4 text-green-600" />
+              <span className="text-green-600 font-medium">
+                {summary.editRateChange.toFixed(1)}% fewer edits
+              </span>
+            </div>
+          </div>
+
+          {/* Avg Chats per Rep per Day */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
+              Avg Chats per Rep per Day
+            </h3>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.chatsPerRepPrevious}
+              </span>
+              <span className="text-gray-400">→</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.chatsPerRepCurrent}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-sm">
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              <span className="text-green-600 font-medium">
+                +{summary.chatsPerRepChange.toFixed(1)}% increase
+              </span>
+            </div>
+          </div>
+
+          {/* Estimated Time Saved */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
+              Estimated Time Saved per Day
+            </h3>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-2xl font-bold text-gray-900">
+                {summary.timeSavedPerDay.toFixed(1)}
+              </span>
+              <span className="text-lg text-gray-600">hours</span>
+            </div>
+            <div className="flex items-center gap-1 text-sm">
+              <Clock className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-500">From reduced editing time</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Acceptance Rate Over Time */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Acceptance Rate Over Time</h3>
+            <p className="text-sm text-gray-600 mb-4">Clear upward trajectory with key improvement milestones</p>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={acceptanceOverTime}>
+                <defs>
+                  <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#d4a574" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#d4a574" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  dataKey="day"
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                />
+                <YAxis
+                  domain={[50, 85]}
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                  label={{ value: 'Acceptance Rate (%)', angle: -90, position: 'insideLeft', style: { fontSize: '12px' } }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="rate"
+                  stroke="#a67c52"
+                  strokeWidth={2}
+                  fill="url(#colorRate)"
+                  onClick={(data) => data && handleDayClick(data.day)}
+                  cursor="pointer"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+              <span>Key milestones</span>
+            </div>
+          </div>
+
+          {/* Edit Reason Trends */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Edit Reason Trends</h3>
+            <p className="text-sm text-gray-600 mb-4">All categories declining — AI learning across dimensions</p>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={editReasonTrends}>
+                <defs>
+                  <linearGradient id="colorWrongTone" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#e8b4b4" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#e8b4b4" stopOpacity={0.3} />
+                  </linearGradient>
+                  <linearGradient id="colorWrongProduct" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f4d4a0" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#f4d4a0" stopOpacity={0.3} />
+                  </linearGradient>
+                  <linearGradient id="colorMissingDetails" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#c9b8a0" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#c9b8a0" stopOpacity={0.3} />
+                  </linearGradient>
+                  <linearGradient id="colorInaccurateInfo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#b8b8b8" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#b8b8b8" stopOpacity={0.3} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  dataKey="day"
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                />
+                <YAxis
+                  domain={[0, 40]}
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                  label={{ value: 'Edit Frequency (%)', angle: -90, position: 'insideLeft', style: { fontSize: '12px' } }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="inaccurateInfo"
+                  stackId="1"
+                  stroke="#808080"
+                  fill="url(#colorInaccurateInfo)"
+                  name="Inaccurate Info"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="missingDetails"
+                  stackId="1"
+                  stroke="#8b7355"
+                  fill="url(#colorMissingDetails)"
+                  name="Missing Details"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="wrongProduct"
+                  stackId="1"
+                  stroke="#d4a574"
+                  fill="url(#colorWrongProduct)"
+                  name="Wrong Product"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="wrongTone"
+                  stackId="1"
+                  stroke="#c77c7c"
+                  fill="url(#colorWrongTone)"
+                  name="Wrong Tone"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+              <button
+                onClick={() => handleEditCategoryClick('Wrong Tone')}
+                className="flex items-center gap-1 hover:opacity-75 transition cursor-pointer"
+              >
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#c77c7c' }}></span>
+                <span className="text-gray-600">Wrong Tone</span>
+              </button>
+              <button
+                onClick={() => handleEditCategoryClick('Wrong Product')}
+                className="flex items-center gap-1 hover:opacity-75 transition cursor-pointer"
+              >
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#d4a574' }}></span>
+                <span className="text-gray-600">Wrong Product</span>
+              </button>
+              <button
+                onClick={() => handleEditCategoryClick('Missing Details')}
+                className="flex items-center gap-1 hover:opacity-75 transition cursor-pointer"
+              >
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#8b7355' }}></span>
+                <span className="text-gray-600">Missing Details</span>
+              </button>
+              <button
+                onClick={() => handleEditCategoryClick('Inaccurate Info')}
+                className="flex items-center gap-1 hover:opacity-75 transition cursor-pointer"
+              >
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#808080' }}></span>
+                <span className="text-gray-600">Inaccurate Info</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Confidence Score Progression */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Confidence Score Progression</h3>
+            <p className="text-sm text-gray-600 mb-4">Journey toward autonomous AI capabilities</p>
+
+            {/* Gauge Chart */}
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative" style={{ width: 200, height: 150 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadialBarChart
+                    cx="50%"
+                    cy="80%"
+                    innerRadius="60%"
+                    outerRadius="100%"
+                    startAngle={180}
+                    endAngle={0}
+                    data={[{ value: confidenceScore.current }]}
+                  >
+                    <PolarAngleAxis
+                      type="number"
+                      domain={[0, 100]}
+                      angleAxisId={0}
+                      tick={false}
+                    />
+                    <RadialBar
+                      background
+                      dataKey="value"
+                      cornerRadius={10}
+                      fill="#a67c52"
+                    />
+                  </RadialBarChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ top: '40%' }}>
+                  <div className="text-3xl font-bold text-gray-900">{confidenceScore.current}%</div>
+                  <div className="text-xs text-gray-600">Current Score</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Line Chart */}
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={confidenceScore.history}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  dataKey="day"
+                  stroke="#9ca3af"
+                  style={{ fontSize: '10px' }}
+                />
+                <YAxis
+                  domain={[40, 100]}
+                  stroke="#9ca3af"
+                  style={{ fontSize: '10px' }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '11px'
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="#8b6f47"
+                  strokeWidth={2}
+                  dot={{ fill: '#8b6f47', r: 2 }}
+                />
+                {/* Reference lines for thresholds */}
+                <Line
+                  type="monotone"
+                  dataKey={() => confidenceScore.afterHoursThreshold}
+                  stroke="#9ca3af"
+                  strokeDasharray="5 5"
+                  strokeWidth={1}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={() => confidenceScore.autoSendThreshold}
+                  stroke="#9ca3af"
+                  strokeDasharray="5 5"
+                  strokeWidth={1}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+
+            <div className="mt-3 space-y-1 text-xs text-gray-600">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-8 h-0.5 bg-gray-300 border-dashed"></span>
+                <span>85% Auto-suggest</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-8 h-0.5 bg-gray-300 border-dashed"></span>
+                <span>95% Auto-send</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-8 h-0.5 bg-gray-300 border-dashed"></span>
+                <span>98% After-hours</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit Frequency by Query Category */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Edit Frequency by Query Category</h3>
+            <p className="text-sm text-gray-600 mb-4">AI excels at product info, needs work on complaints</p>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart
+                data={editFrequencyByCategory}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  type="number"
+                  domain={[0, 100]}
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                  label={{ value: 'Acceptance Rate (%)', position: 'insideBottom', offset: -5, style: { fontSize: '12px' } }}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="category"
+                  stroke="#9ca3af"
+                  style={{ fontSize: '12px' }}
+                  width={100}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Bar
+                  dataKey="acceptanceRate"
+                  radius={[0, 4, 4, 0]}
+                  fill="#8b7355"
+                  onClick={(data) => handleCategoryClick(data.category)}
+                  cursor="pointer"
+                >
+                  {editFrequencyByCategory.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={
+                        entry.status === 'excellent' ? '#6b9b7f' :
+                        entry.status === 'good' ? '#8b9b6b' :
+                        entry.status === 'fair' ? '#d4a574' :
+                        '#b77c7c'
+                      }
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex flex-wrap gap-3 text-xs">
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#6b9b7f' }}></span>
+                <span className="text-gray-600">Excellent (80%+)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#8b9b6b' }}></span>
+                <span className="text-gray-600">Good (70-79%)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#d4a574' }}></span>
+                <span className="text-gray-600">Fair (60-69%)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: '#b77c7c' }}></span>
+                <span className="text-gray-600">Needs Work (&lt;60%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Data Modal */}
+        {modalData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+               onClick={() => setModalData(null)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
+                 onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{modalData.title}</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {modalData.data.length} feedback {modalData.data.length === 1 ? 'record' : 'records'} found
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalData(null)}
+                  className="text-gray-400 hover:text-gray-600 transition"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                {modalData.data.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    No feedback data found for this selection
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {modalData.data.map((feedback, index) => (
+                      <div key={feedback.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-semibold text-gray-500">#{index + 1}</span>
+                              <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
+                                feedback.editCategory === 'TONE_ADJUSTMENT' ? 'bg-pink-100 text-pink-800' :
+                                feedback.editCategory === 'PRODUCT_CORRECTION' ? 'bg-orange-100 text-orange-800' :
+                                feedback.editCategory === 'ACCURACY_ISSUE' ? 'bg-red-100 text-red-800' :
+                                feedback.editCategory === 'LENGTH_PROBLEM' ? 'bg-yellow-100 text-yellow-800' :
+                                feedback.editCategory === 'LANGUAGE_QUALITY' ? 'bg-blue-100 text-blue-800' :
+                                feedback.editCategory === 'COMPLETE_REWRITE' ? 'bg-purple-100 text-purple-800' :
+                                feedback.editCategory === 'MINOR_EDIT' ? 'bg-green-100 text-green-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {feedback.editCategory.replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                Acceptance: {(feedback.acceptanceScore * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 mb-2">
+                              Edited by: <span className="font-medium text-gray-700">{feedback.editedBy}</span> •
+                              {' '}{new Date(feedback.createdAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {feedback.customerQuery && (
+                            <div>
+                              <div className="text-xs font-semibold text-gray-700 mb-1">Customer Query:</div>
+                              <div className="text-sm text-gray-600 bg-white p-2 rounded border border-gray-200">
+                                {feedback.customerQuery}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <div className="text-xs font-semibold text-gray-700 mb-1">AI Suggestion:</div>
+                              <div className="text-sm text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 max-h-32 overflow-y-auto">
+                                {feedback.originalSuggestion}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold text-gray-700 mb-1">Edited Content:</div>
+                              <div className="text-sm text-gray-600 bg-green-50 p-2 rounded border border-green-200 max-h-32 overflow-y-auto">
+                                {feedback.editedContent}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end p-6 border-t border-gray-200 bg-gray-50">
+                <button
+                  onClick={() => setModalData(null)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
