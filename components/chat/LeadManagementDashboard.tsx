@@ -119,6 +119,8 @@ export default function LeadManagementDashboard({
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
   const inputMessageRef = useRef('');
+  /** Ignore AI fetch results if the user switched conversations before the request finished. */
+  const activeConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     inputMessageRef.current = inputMessage;
@@ -163,7 +165,21 @@ export default function LeadManagementDashboard({
   }, [aiSuggestion]);
 
   useEffect(() => {
+    const id = selectedConversation?.id ?? null;
+    activeConversationIdRef.current = id;
+
+    setInputMessage('');
+    setAiSuggestion(null);
+    setLastSuggestedMessageId(null);
+    setUsedAISuggestion(null);
+    setIsLoadingSuggestion(false);
+    setTranslatingInput(false);
+    setAiReplyEditMode(false);
+    setAiReplyComposerTab('edit');
+    setRelatedProductsOpen(true);
+    setAiComposerLayout('inline');
     setAiSuggestionExpanded(false);
+    setMessages([]);
   }, [selectedConversation?.id]);
 
   useEffect(() => {
@@ -249,6 +265,7 @@ export default function LeadManagementDashboard({
   const getAISuggestion = async () => {
     if (!selectedConversation) return;
 
+    const conversationId = selectedConversation.id;
     setIsLoadingSuggestion(true);
     try {
       const lastCustomerMessage = messages
@@ -276,11 +293,14 @@ export default function LeadManagementDashboard({
       });
 
       const data = await response.json();
+      if (activeConversationIdRef.current !== conversationId) return;
       setAiSuggestion(data);
     } catch (error) {
       console.error('Error getting AI suggestion:', error);
     } finally {
-      setIsLoadingSuggestion(false);
+      if (activeConversationIdRef.current === conversationId) {
+        setIsLoadingSuggestion(false);
+      }
     }
   };
 
@@ -799,12 +819,6 @@ export default function LeadManagementDashboard({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {isLoadingSuggestion && (
-                  <div className="flex items-center gap-2" style={{ color: 'var(--zoya-gold)' }}>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">AI is thinking...</span>
-                  </div>
-                )}
                 <button
                   onClick={() => {
                     // Regenerate: discard manager draft so the new suggestion uses inline
@@ -820,7 +834,7 @@ export default function LeadManagementDashboard({
                   className="p-2 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Regenerate AI suggestion"
                 >
-                  <RefreshCw className={`w-5 h-5 text-amber-600 ${isLoadingSuggestion ? 'animate-spin' : ''}`} />
+                  <RefreshCw className="w-5 h-5 text-amber-600" />
                 </button>
               </div>
             </div>
@@ -935,7 +949,10 @@ export default function LeadManagementDashboard({
             </div>
 
             {/* Reply composer: normal input while AI loads; AI suggestion replaces input when ready */}
-            <div className="shrink-0 border-t border-[#E8E4DF] bg-[#F8F5F2] p-4">
+            <div
+              className="shrink-0 bg-[#F8F5F2] p-4"
+              style={{ borderTop: '2px solid var(--zoya-gold)' }}
+            >
               {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
                 <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
@@ -1043,36 +1060,51 @@ export default function LeadManagementDashboard({
                 <div className="flex flex-col gap-3">
                   {aiReplyEditMode ? (
                     <>
-                      <div
-                        className="flex w-fit gap-1 rounded-lg border border-[#E0D9D2] bg-white/90 p-1"
-                        role="tablist"
-                        aria-label="Reply composer"
-                      >
+                      <div className="flex items-center justify-between gap-2">
+                        <div
+                          className="flex w-fit gap-1 rounded-lg border border-[#E0D9D2] bg-white/90 p-1"
+                          role="tablist"
+                          aria-label="Reply composer"
+                        >
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={aiReplyComposerTab === 'edit'}
+                            onClick={() => setAiReplyComposerTab('edit')}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                              aiReplyComposerTab === 'edit'
+                                ? 'bg-[#C4B5A5] text-white'
+                                : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                            }`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={aiReplyComposerTab === 'preview'}
+                            onClick={() => setAiReplyComposerTab('preview')}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                              aiReplyComposerTab === 'preview'
+                                ? 'bg-[#C4B5A5] text-white'
+                                : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                            }`}
+                          >
+                            Preview
+                          </button>
+                        </div>
                         <button
                           type="button"
-                          role="tab"
-                          aria-selected={aiReplyComposerTab === 'edit'}
-                          onClick={() => setAiReplyComposerTab('edit')}
-                          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                            aiReplyComposerTab === 'edit'
-                              ? 'bg-[#C4B5A5] text-white'
-                              : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
-                          }`}
+                          onClick={() => setAiSuggestionExpanded((e) => !e)}
+                          className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                          aria-expanded={aiSuggestionExpanded}
+                          title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
                         >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={aiReplyComposerTab === 'preview'}
-                          onClick={() => setAiReplyComposerTab('preview')}
-                          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                            aiReplyComposerTab === 'preview'
-                              ? 'bg-[#C4B5A5] text-white'
-                              : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
-                          }`}
-                        >
-                          Preview
+                          {aiSuggestionExpanded ? (
+                            <Minimize2 className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" aria-hidden />
+                          )}
                         </button>
                       </div>
                       {aiReplyComposerTab === 'edit' ? (
@@ -1081,8 +1113,12 @@ export default function LeadManagementDashboard({
                           value={inputMessage}
                           onChange={(e) => setInputMessage(e.target.value)}
                           placeholder="Type your reply..."
-                          className="max-h-[min(15rem,32dvh)] min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
-                          rows={3}
+                          className={`box-border min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
+                            aiSuggestionExpanded
+                              ? 'h-[min(55dvh,28rem)]'
+                              : 'h-[min(15rem,32dvh)]'
+                          }`}
+                          rows={1}
                           disabled={isSending}
                           onKeyDown={(e) => {
                             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1092,7 +1128,13 @@ export default function LeadManagementDashboard({
                           }}
                         />
                       ) : (
-                        <div className="max-h-[min(15rem,32dvh)] min-h-[100px] overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3">
+                        <div
+                          className={`box-border min-h-[100px] overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 ${
+                            aiSuggestionExpanded
+                              ? 'h-[min(55dvh,28rem)]'
+                              : 'h-[min(15rem,32dvh)]'
+                          }`}
+                        >
                           {inputMessage.trim() ? (
                             <MessageContent
                               content={inputMessage}
@@ -1169,7 +1211,7 @@ export default function LeadManagementDashboard({
                       type="button"
                       onClick={sendMessage}
                       disabled={!inputMessage.trim() || isSending}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C4B5A5] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#b8a899] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                     >
                       {isSending ? (
                         <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -1202,7 +1244,7 @@ export default function LeadManagementDashboard({
                       type="button"
                       onClick={sendMessage}
                       disabled={!inputMessage.trim() || isSending}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#C4B5A5] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#b8a899] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                     >
                       {isSending ? (
                         <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
