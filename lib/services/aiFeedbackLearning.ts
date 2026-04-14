@@ -21,33 +21,34 @@ export interface FeedbackInsights {
  * Get feedback insights for the past N days
  */
 export async function getFeedbackInsights(days: number = 30): Promise<FeedbackInsights> {
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
 
-  // Get all feedback from the past N days
-  const feedbackRecords = await prisma.aIEditFeedback.findMany({
-    where: {
-      createdAt: {
-        gte: startDate,
+    // Get all feedback from the past N days
+    const feedbackRecords = await prisma.aIEditFeedback.findMany({
+      where: {
+        createdAt: {
+          gte: startDate,
+        },
       },
-    },
-    select: {
-      editCategory: true,
-      acceptanceScore: true,
-      improvementNeeded: true,
-      createdAt: true,
-    },
-  });
+      select: {
+        editCategory: true,
+        acceptanceScore: true,
+        improvementNeeded: true,
+        createdAt: true,
+      },
+    });
 
-  if (feedbackRecords.length === 0) {
-    return {
-      commonIssues: [],
-      averageAcceptanceScore: 0,
-      topImprovementAreas: [],
-      recentTrends: [],
-      promptEnhancements: [],
-    };
-  }
+    if (feedbackRecords.length === 0) {
+      return {
+        commonIssues: [],
+        averageAcceptanceScore: 0,
+        topImprovementAreas: [],
+        recentTrends: [],
+        promptEnhancements: [],
+      };
+    }
 
   // Calculate common issues
   const categoryCount: Record<string, number> = {};
@@ -94,13 +95,24 @@ export async function getFeedbackInsights(days: number = 30): Promise<FeedbackIn
   // Generate prompt enhancements
   const promptEnhancements = generatePromptEnhancements(commonIssues, topImprovementAreas);
 
-  return {
-    commonIssues,
-    averageAcceptanceScore,
-    topImprovementAreas,
-    recentTrends,
-    promptEnhancements,
-  };
+    return {
+      commonIssues,
+      averageAcceptanceScore,
+      topImprovementAreas,
+      recentTrends,
+      promptEnhancements,
+    };
+  } catch (error) {
+    console.log('[Feedback Learning] Error fetching insights (database might be empty or unavailable):', error);
+    // Return empty insights on error - graceful degradation
+    return {
+      commonIssues: [],
+      averageAcceptanceScore: 0,
+      topImprovementAreas: [],
+      recentTrends: [],
+      promptEnhancements: [],
+    };
+  }
 }
 
 /**
@@ -217,25 +229,26 @@ export async function getSimilarPastEdits(
   editCategory: EditCategory;
   keyChanges: string[];
 }>> {
-  // Get recent high-quality edits (high acceptance score after edit)
-  const pastEdits = await prisma.aIEditFeedback.findMany({
-    where: {
-      acceptanceScore: {
-        lt: 0.7, // Low acceptance means significant improvement was needed
+  try {
+    // Get recent high-quality edits (high acceptance score after edit)
+    const pastEdits = await prisma.aIEditFeedback.findMany({
+      where: {
+        acceptanceScore: {
+          lt: 0.7, // Low acceptance means significant improvement was needed
+        },
       },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: limit * 2,
-    select: {
-      originalSuggestion: true,
-      editedContent: true,
-      editCategory: true,
-      keyChanges: true,
-      customerQuery: true,
-    },
-  });
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit * 2,
+      select: {
+        originalSuggestion: true,
+        editedContent: true,
+        editCategory: true,
+        keyChanges: true,
+        customerQuery: true,
+      },
+    });
 
   // Filter for similar queries (simple keyword matching for now)
   const queryWords = customerQuery.toLowerCase().split(/\s+/);
@@ -251,16 +264,21 @@ export async function getSimilarPastEdits(
     };
   });
 
-  // Return top similar edits
-  return scoredEdits
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit)
-    .map(edit => ({
-      originalSuggestion: edit.originalSuggestion,
-      editedContent: edit.editedContent,
-      editCategory: edit.editCategory,
-      keyChanges: JSON.parse(edit.keyChanges || '[]'),
-    }));
+    // Return top similar edits
+    return scoredEdits
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit)
+      .map(edit => ({
+        originalSuggestion: edit.originalSuggestion,
+        editedContent: edit.editedContent,
+        editCategory: edit.editCategory,
+        keyChanges: JSON.parse(edit.keyChanges || '[]'),
+      }));
+  } catch (error) {
+    console.log('[Feedback Learning] Error fetching similar edits (database might be empty or unavailable):', error);
+    // Return empty array on error - graceful degradation
+    return [];
+  }
 }
 
 // Prisma cleanup is handled by the shared instance in lib/prisma.ts

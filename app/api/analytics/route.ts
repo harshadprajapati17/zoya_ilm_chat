@@ -111,8 +111,20 @@ export async function GET(request: NextRequest) {
     // Time series data (daily)
     const timeSeriesData = await generateTimeSeriesData(feedbackRecords, days);
 
-    // Get detailed feedback insights
-    const insights = await getFeedbackInsights(days);
+    // Get detailed feedback insights (with error handling)
+    let insights;
+    try {
+      insights = await getFeedbackInsights(days);
+    } catch (insightsError) {
+      console.log('[Analytics] Feedback insights not available:', insightsError);
+      insights = {
+        commonIssues: [],
+        averageAcceptanceScore: 0,
+        topImprovementAreas: [],
+        recentTrends: [],
+        promptEnhancements: [],
+      };
+    }
 
     return NextResponse.json({
       summary: {
