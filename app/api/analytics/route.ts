@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getFeedbackInsights } from '@/lib/services/aiFeedbackLearning';
 
@@ -23,24 +24,8 @@ export async function GET(request: NextRequest) {
       where.editedBy = managerId;
     }
 
-    // Get all feedback records
-    const feedbackRecords = await prisma.aIEditFeedback.findMany({
-      where,
-      select: {
-        id: true,
-        editCategory: true,
-        editPercentage: true,
-        acceptanceScore: true,
-        similarityScore: true,
-        editedBy: true,
-        createdAt: true,
-        improvementNeeded: true,
-        keyChanges: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    // Get all feedback records. Older environments may not have this table yet.
+    const feedbackRecords = await fetchFeedbackRecordsSafely(where);
 
     // Get total AI suggestions made (including those not edited)
     const totalSuggestions = await prisma.suggestedReply.count({
@@ -157,6 +142,38 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to fetch analytics' },
       { status: 500 }
     );
+  }
+}
+
+async function fetchFeedbackRecordsSafely(where: Prisma.AIEditFeedbackWhereInput) {
+  try {
+    return await prisma.aIEditFeedback.findMany({
+      where,
+      select: {
+        id: true,
+        editCategory: true,
+        editPercentage: true,
+        acceptanceScore: true,
+        similarityScore: true,
+        editedBy: true,
+        createdAt: true,
+        improvementNeeded: true,
+        keyChanges: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2021'
+    ) {
+      console.warn('[Analytics] AIEditFeedback table not found. Returning empty feedback set.');
+      return [];
+    }
+
+    throw error;
   }
 }
 
