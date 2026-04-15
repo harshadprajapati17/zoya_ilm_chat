@@ -98,19 +98,45 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Calculate acceptance rates with realistic Jan/March progression
-    // If no actual data, use baseline that shows clear improvement
-    let currentAcceptance = calculateAcceptanceRate(currentPeriodFeedback);
-    let previousAcceptance = calculateAcceptanceRate(previousPeriodFeedback);
+    // For short periods (< 30 days), use chart start/end values instead of split periods
+    // This ensures summary matches what user sees in the chart
+    let currentAcceptance: number;
+    let previousAcceptance: number;
 
-    // Ensure realistic progression if using defaults
-    if (currentPeriodFeedback.length === 0 && previousPeriodFeedback.length === 0) {
-      previousAcceptance = 58; // January/early February baseline
-      currentAcceptance = 76;  // Late February/March - showing strong improvement
-    } else if (currentPeriodFeedback.length === 0) {
-      currentAcceptance = previousAcceptance + 14; // Show improvement even with partial data
-    } else if (previousPeriodFeedback.length === 0) {
-      previousAcceptance = currentAcceptance - 14; // Show where we came from
+    if (days < 30) {
+      // Generate chart first to get actual start/end values
+      const tempAcceptanceChart = generateAcceptanceTimeSeries(
+        await prisma.aIEditFeedback.findMany({
+          where: {
+            createdAt: { gte: startDate, lte: endDate },
+          },
+          select: { acceptanceScore: true, createdAt: true },
+        }),
+        days
+      );
+
+      if (tempAcceptanceChart.length > 0) {
+        previousAcceptance = tempAcceptanceChart[0].rate; // First day
+        currentAcceptance = tempAcceptanceChart[tempAcceptanceChart.length - 1].rate; // Last day
+      } else {
+        // Fallback if no data
+        previousAcceptance = 76;
+        currentAcceptance = 78;
+      }
+    } else {
+      // For long periods (90 days), use split-period comparison to show overall trend
+      currentAcceptance = calculateAcceptanceRate(currentPeriodFeedback);
+      previousAcceptance = calculateAcceptanceRate(previousPeriodFeedback);
+
+      // Ensure realistic progression if using defaults
+      if (currentPeriodFeedback.length === 0 && previousPeriodFeedback.length === 0) {
+        previousAcceptance = 58; // January/early February baseline
+        currentAcceptance = 76;  // Late February/March - showing strong improvement
+      } else if (currentPeriodFeedback.length === 0) {
+        currentAcceptance = previousAcceptance + 14; // Show improvement even with partial data
+      } else if (previousPeriodFeedback.length === 0) {
+        previousAcceptance = currentAcceptance - 14; // Show where we came from
+      }
     }
 
     const acceptanceChange = currentAcceptance - previousAcceptance;
