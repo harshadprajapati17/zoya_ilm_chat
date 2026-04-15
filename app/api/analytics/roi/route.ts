@@ -5,15 +5,45 @@ import { prisma } from '@/lib/prisma';
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const days = parseInt(searchParams.get('days') || '90');
+    const daysParam = parseInt(searchParams.get('days') || '90', 10);
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
+    const hasCustomRange = Boolean(startDateParam && endDateParam);
 
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+
+    if (hasCustomRange) {
+      const parsedStartDate = new Date(startDateParam as string);
+      const parsedEndDate = new Date(endDateParam as string);
+
+      if (Number.isNaN(parsedStartDate.getTime()) || Number.isNaN(parsedEndDate.getTime())) {
+        return NextResponse.json({ error: 'Invalid custom date range' }, { status: 400 });
+      }
+
+      if (parsedStartDate > parsedEndDate) {
+        return NextResponse.json({ error: 'Start date cannot be after end date' }, { status: 400 });
+      }
+
+      startDate.setTime(parsedStartDate.getTime());
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setTime(parsedEndDate.getTime());
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 90;
+      startDate.setDate(startDate.getDate() - (days - 1));
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    const days = Math.max(
+      1,
+      Math.ceil((endDate.getTime() - startDate.getTime() + 1) / (1000 * 60 * 60 * 24))
+    );
 
     // Split the time period in half for comparison
-    const midDate = new Date();
-    midDate.setDate(midDate.getDate() - Math.floor(days / 2));
+    const midDate = new Date(startDate);
+    midDate.setDate(midDate.getDate() + Math.floor(days / 2));
 
     // Get feedback data for current period
     const currentPeriodFeedback = await prisma.aIEditFeedback.findMany({
@@ -127,13 +157,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Generate acceptance rate over time
-    const acceptanceOverTime = generateAcceptanceTimeSeries(allFeedback, days);
+    const acceptanceOverTime = generateAcceptanceTimeSeries(allFeedback, days, startDate);
 
     // Generate edit reason trends
-    const editReasonTrends = generateEditReasonTrends(allFeedback, days);
+    const editReasonTrends = generateEditReasonTrends(allFeedback, days, startDate);
 
     // Calculate confidence score progression
-    const confidenceScore = calculateConfidenceProgression(allFeedback, days);
+    const confidenceScore = calculateConfidenceProgression(allFeedback, days, startDate);
 
     // Calculate edit frequency by category
     const editFrequencyByCategory = await calculateEditFrequencyByCategory(allFeedback);
@@ -242,12 +272,12 @@ function calculateAcceptanceRate(feedback: Array<{ acceptanceScore: number | nul
 // Generate acceptance rate time series - showing AI learning improvement over 90 days
 function generateAcceptanceTimeSeries(
   feedback: Array<{ acceptanceScore: number | null; createdAt: Date }>,
-  days: number
+  days: number,
+  rangeStartDate: Date
 ) {
   const result: Array<{ day: number; dateLabel: string; rate: number }> = [];
-  const startDate = new Date();
+  const startDate = new Date(rangeStartDate);
   startDate.setHours(0, 0, 0, 0);
-  startDate.setDate(startDate.getDate() - (days - 1));
   const dateFormatter = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -259,9 +289,9 @@ function generateAcceptanceTimeSeries(
   feedback.forEach(f => {
     if (f.acceptanceScore !== null) {
       const daysDiff = Math.floor(
-        (new Date().getTime() - new Date(f.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+        (new Date(f.createdAt).getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
       );
-      const dayIndex = days - daysDiff;
+      const dayIndex = daysDiff + 1;
 
       if (dayIndex >= 1 && dayIndex <= days) {
         if (!dailyData[dayIndex]) {
@@ -325,7 +355,8 @@ function generateAcceptanceTimeSeries(
 // Generate edit reason trends - showing decreasing edit frequency over time (AI learning)
 function generateEditReasonTrends(
   feedback: Array<{ editCategory: any; createdAt: Date; improvementNeeded: string | null }>,
-  days: number
+  days: number,
+  rangeStartDate: Date
 ) {
   const result: Array<{
     day: number;
@@ -335,9 +366,8 @@ function generateEditReasonTrends(
     missingDetails: number;
     inaccurateInfo: number;
   }> = [];
-  const startDate = new Date();
+  const startDate = new Date(rangeStartDate);
   startDate.setHours(0, 0, 0, 0);
-  startDate.setDate(startDate.getDate() - (days - 1));
   const dateFormatter = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -365,9 +395,9 @@ function generateEditReasonTrends(
 
   feedback.forEach(f => {
     const daysDiff = Math.floor(
-      (new Date().getTime() - new Date(f.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+      (new Date(f.createdAt).getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
     );
-    const dayIndex = days - daysDiff;
+    const dayIndex = daysDiff + 1;
 
     if (dayIndex >= 1 && dayIndex <= days) {
       if (!dailyData[dayIndex]) {
@@ -489,12 +519,12 @@ function generateEditReasonTrends(
 // Calculate confidence score progression - showing increasing AI confidence over time
 function calculateConfidenceProgression(
   feedback: Array<{ acceptanceScore: number | null; createdAt: Date }>,
-  days: number
+  days: number,
+  rangeStartDate: Date
 ) {
   const history: Array<{ day: number; dateLabel: string; score: number }> = [];
-  const startDate = new Date();
+  const startDate = new Date(rangeStartDate);
   startDate.setHours(0, 0, 0, 0);
-  startDate.setDate(startDate.getDate() - (days - 1));
   const dateFormatter = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -506,9 +536,9 @@ function calculateConfidenceProgression(
   feedback.forEach(f => {
     if (f.acceptanceScore !== null) {
       const daysDiff = Math.floor(
-        (new Date().getTime() - new Date(f.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+        (new Date(f.createdAt).getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
       );
-      const dayIndex = days - daysDiff;
+      const dayIndex = daysDiff + 1;
 
       if (dayIndex >= 1 && dayIndex <= days) {
         if (!dailyScores[dayIndex]) {

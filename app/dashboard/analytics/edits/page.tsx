@@ -18,6 +18,11 @@ interface EditRecord {
   createdAt: string;
 }
 
+interface ToastState {
+  message: string;
+  type: 'success' | 'error';
+}
+
 export default function EditsDetailPage() {
   const [edits, setEdits] = useState<EditRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +34,7 @@ export default function EditsDetailPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [toast, setToast] = useState<ToastState | null>(null);
   const itemsPerPage = 20;
 
   useEffect(() => {
@@ -101,6 +107,11 @@ export default function EditsDetailPage() {
       ...prev,
       [actionKey]: action,
     }));
+    setToast({
+      message: action === 'accepted' ? 'Improvement marked as accepted' : 'Improvement marked as rejected',
+      type: action === 'accepted' ? 'success' : 'error',
+    });
+    setTimeout(() => setToast(null), 2200);
   };
 
   const getCategoryColor = (category: string) => {
@@ -136,6 +147,17 @@ export default function EditsDetailPage() {
 
   return (
     <div className="min-h-screen p-8">
+      {toast && (
+        <div className="fixed right-6 top-6 z-50">
+          <div
+            className={`rounded-md px-4 py-3 text-sm font-medium text-white shadow-lg ${
+              toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -283,9 +305,6 @@ export default function EditsDetailPage() {
                     </p>
                     <div className="flex gap-4 text-sm">
                       <span>
-                        Edit: <span className="font-semibold">{edit.editPercentage.toFixed(1)}%</span>
-                      </span>
-                      <span>
                         Acceptance: <span className={`font-semibold ${getAcceptanceColor(edit.acceptanceScore)}`}>
                           {(edit.acceptanceScore * 100).toFixed(1)}%
                         </span>
@@ -319,9 +338,6 @@ export default function EditsDetailPage() {
                       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{edit.originalSuggestion}</p>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        ❌ Poor quality - generic, unhelpful, or inaccurate
-                      </p>
                     </div>
 
                     {/* Manager's Correction (What AI Should Learn) */}
@@ -333,9 +349,6 @@ export default function EditsDetailPage() {
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{edit.editedContent}</p>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        ✅ High quality - specific, helpful, accurate. AI learns from this!
-                      </p>
                     </div>
                   </div>
 

@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { TrendingUp, TrendingDown, Users, Target, Info, X, MapPin } from 'lucide-react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { TrendingUp, TrendingDown, Users, Info, X, MapPin, Pencil } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { DayPicker, type DateRange } from 'react-day-picker';
+import { format, parseISO } from 'date-fns';
+import { createPortal } from 'react-dom';
+import 'react-day-picker/dist/style.css';
 
 interface RawDataItem {
   id: string;
@@ -51,6 +55,8 @@ interface InsightsData {
   }>;
   rawData: RawDataItem[];
 }
+
+type TimeRange = '7d' | '30d' | '90d' | 'custom';
 
 const OCCASION_KEYWORDS = [
   'occasion',
@@ -118,45 +124,42 @@ const GEOGRAPHY_INSIGHTS = [
   { city: 'Delhi', revenueInLakhs: 16.9, conversations: 231 },
   { city: 'Pune', revenueInLakhs: 12.7, conversations: 186 },
   { city: 'Bengaluru', revenueInLakhs: 14.8, conversations: 205 },
-  { city: 'Hyderabad', revenueInLakhs: 11.9, conversations: 174 },
-  { city: 'Chennai', revenueInLakhs: 13.4, conversations: 193 },
+  { city: 'Chicago', revenueInLakhs: 11.9, conversations: 174 },
+  { city: 'Dallas', revenueInLakhs: 13.4, conversations: 193 },
 ];
 
 export default function CustomerInsightsPage() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
+  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>();
+  const [isCustomPickerOpen, setIsCustomPickerOpen] = useState(false);
+  const [customPickerPosition, setCustomPickerPosition] = useState({ top: 0, left: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<{
     title: string;
     data: RawDataItem[];
     filterFn?: (item: RawDataItem) => boolean;
   } | null>(null);
+  const customPickerRef = useRef<HTMLDivElement | null>(null);
+  const customPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const getSelectedDateRangeLabel = () => {
-    const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(endDate.getDate() - (selectedDays - 1));
-
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-
-    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
-  };
-
-  useEffect(() => {
-    fetchInsights();
-  }, [timeRange]);
-
-  const fetchInsights = async () => {
+  const fetchInsights = useCallback(async () => {
     try {
       setLoading(true);
-      const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-      const response = await fetch(`/api/analytics/insights?days=${days}`);
+      const queryParams = new URLSearchParams();
+
+      if (timeRange === 'custom') {
+        queryParams.set('startDate', customStartDate);
+        queryParams.set('endDate', customEndDate);
+      } else {
+        const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+        queryParams.set('days', String(days));
+      }
+
+      const response = await fetch(`/api/analytics/insights?${queryParams.toString()}`);
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
@@ -182,6 +185,73 @@ export default function CustomerInsightsPage() {
     } finally {
       setLoading(false);
     }
+  }, [timeRange, customStartDate, customEndDate]);
+
+  useEffect(() => {
+    if (timeRange === 'custom' && (!customStartDate || !customEndDate)) {
+      return;
+    }
+
+    fetchInsights();
+  }, [timeRange, customStartDate, customEndDate, fetchInsights]);
+
+  const updateCustomPickerPosition = useCallback(() => {
+    if (!customPickerTriggerRef.current) return;
+    const rect = customPickerTriggerRef.current.getBoundingClientRect();
+    setCustomPickerPosition({
+      top: rect.bottom + 8,
+      left: rect.right,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isCustomPickerOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+      if (customPickerRef.current?.contains(targetNode)) return;
+      if (customPickerTriggerRef.current?.contains(targetNode)) return;
+      setIsCustomPickerOpen(false);
+    };
+
+    updateCustomPickerPosition();
+    const handleViewportChange = () => updateCustomPickerPosition();
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [isCustomPickerOpen, updateCustomPickerPosition]);
+
+  useEffect(() => {
+    if (!isCustomPickerOpen) {
+      return;
+    }
+    const timer = setTimeout(() => updateCustomPickerPosition(), 0);
+    return () => clearTimeout(timer);
+  }, [isCustomPickerOpen, updateCustomPickerPosition]);
+
+  const handleCustomRangeClick = () => {
+    setTimeRange('custom');
+    setPendingRange({
+      from: customStartDate ? parseISO(customStartDate) : undefined,
+      to: customEndDate ? parseISO(customEndDate) : undefined,
+    });
+    setIsCustomPickerOpen(true);
+  };
+
+  const handleRangeSelect = (range: DateRange | undefined) => {
+    setPendingRange(range);
+  };
+
+  const handleApplyCustomRange = () => {
+    if (!pendingRange?.from || !pendingRange?.to) return;
+    setCustomStartDate(format(pendingRange.from, 'yyyy-MM-dd'));
+    setCustomEndDate(format(pendingRange.to, 'yyyy-MM-dd'));
+    setIsCustomPickerOpen(false);
   };
 
   const openModal = (title: string, filterFn?: (item: RawDataItem) => boolean) => {
@@ -210,6 +280,30 @@ export default function CustomerInsightsPage() {
 
   if (!data) return null;
 
+  const highestDemandRange = data.priceSensitivity.reduce<{ range: string; volume: number } | null>(
+    (currentHighest, item) => {
+      if (!currentHighest || item.volume > currentHighest.volume) {
+        return { range: item.range, volume: item.volume };
+      }
+      return currentHighest;
+    },
+    null
+  );
+
+  const selectedPresetLabel = (() => {
+    if (timeRange === 'custom') return null;
+    const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (selectedDays - 1));
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
+  })();
+
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-7xl mx-auto">
@@ -220,10 +314,7 @@ export default function CustomerInsightsPage() {
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Customer Insights</h1>
               <p className="text-gray-600">Deep dive into customer behavior and preferences</p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-gray-600 whitespace-nowrap">
-                Date Range: <span className="font-medium text-gray-800">{getSelectedDateRangeLabel()}</span>
-              </div>
+            <div className="flex flex-col items-start gap-2">
               <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm">
                 <button
                   onClick={() => setTimeRange('7d')}
@@ -249,7 +340,72 @@ export default function CustomerInsightsPage() {
                 >
                   Last 90 Days
                 </button>
+                <button
+                  onClick={handleCustomRangeClick}
+                  ref={customPickerTriggerRef}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === 'custom' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {timeRange === 'custom' && customStartDate && customEndDate
+                      ? `${format(parseISO(customStartDate), 'MMM d, yyyy')} - ${format(parseISO(customEndDate), 'MMM d, yyyy')}`
+                      : 'Custom Range'}
+                    {timeRange === 'custom' && customStartDate && customEndDate ? <Pencil className="h-3 w-3" /> : null}
+                  </span>
+                </button>
               </div>
+              {selectedPresetLabel ? (
+                <div className="text-xs text-gray-500 whitespace-nowrap">
+                  Date Range: <span className="font-normal text-gray-500">{selectedPresetLabel}</span>
+                </div>
+              ) : null}
+              {isCustomPickerOpen && createPortal(
+                <div
+                  ref={customPickerRef}
+                  className="fixed z-9999 rounded-lg border border-stone-200 bg-white p-3 shadow-xl"
+                  style={{ top: customPickerPosition.top, left: customPickerPosition.left, transform: 'translateX(-100%)' }}
+                >
+                  <DayPicker
+                    mode="range"
+                    selected={pendingRange}
+                    onSelect={handleRangeSelect}
+                    min={1}
+                    disabled={{ after: new Date() }}
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear()}
+                    numberOfMonths={2}
+                    pagedNavigation
+                    className="text-sm"
+                    classNames={{
+                      months: 'flex flex-row gap-6',
+                    }}
+                  />
+                  <div className="mt-3 border-t border-stone-200 pt-3">
+                    <p className="text-xs text-stone-600">
+                      Selected:{' '}
+                      <span className="font-medium text-stone-800">
+                        {pendingRange?.from
+                          ? pendingRange?.to
+                            ? `${format(pendingRange.from, 'MMM d, yyyy')} - ${format(pendingRange.to, 'MMM d, yyyy')}`
+                            : `${format(pendingRange.from, 'MMM d, yyyy')} - Select end date`
+                          : 'Select start and end dates'}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={handleApplyCustomRange}
+                        disabled={!pendingRange?.from || !pendingRange?.to}
+                        className="rounded-md bg-stone-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
             </div>
           </div>
         </div>
@@ -467,12 +623,12 @@ export default function CustomerInsightsPage() {
                 >
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm text-gray-700">{item.range}</span>
-                    <span className="text-xs text-gray-500">Conv: {item.conversion}%</span>
+                    <span className="text-xs text-gray-500">Volume: {item.volume}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className="bg-stone-700 h-2 rounded-full"
-                      style={{ width: `${item.conversion}%` }}
+                      style={{ width: `${item.volume}%` }}
                     ></div>
                   </div>
                 </div>
@@ -480,9 +636,11 @@ export default function CustomerInsightsPage() {
             </div>
             <div className="mt-6 pt-4 border-t space-y-2">
               <div className="flex items-center gap-2 text-sm">
-                <Target className="w-4 h-4 text-blue-600" />
-                <span className="text-gray-700">Highest Conversion</span>
-                <span className="ml-auto font-semibold">₹10L+ price range</span>
+                <TrendingUp className="w-4 h-4 text-green-600" />
+                <span className="text-gray-700">Highest Demand</span>
+                <span className="ml-auto font-semibold">
+                  {highestDemandRange ? `${highestDemandRange.range} price range` : 'N/A'}
+                </span>
               </div>
             </div>
           </div>

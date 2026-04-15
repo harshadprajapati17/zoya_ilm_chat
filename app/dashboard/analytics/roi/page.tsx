@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -19,7 +19,11 @@ import {
   RadialBar,
   PolarAngleAxis,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Clock, MessageSquare, Info, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, MessageSquare, Info, X, CalendarDays, Pencil } from 'lucide-react';
+import { DayPicker, type DateRange } from 'react-day-picker';
+import { format, parseISO } from 'date-fns';
+import { createPortal } from 'react-dom';
+import 'react-day-picker/dist/style.css';
 
 interface FeedbackDetail {
   id: string;
@@ -79,42 +83,109 @@ interface ROIData {
   rawFeedback: Array<FeedbackDetail>;
 }
 
-type TimeRange = 7 | 30 | 90;
+type TimeRange = '7d' | '30d' | '90d' | 'custom';
 
 export default function ROIAnalyticsPage() {
   const [data, setData] = useState<ROIData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<TimeRange>(90);
+  const [timeRange, setTimeRange] = useState<TimeRange>('90d');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>();
+  const [isCustomPickerOpen, setIsCustomPickerOpen] = useState(false);
+  const [customPickerPosition, setCustomPickerPosition] = useState({ top: 0, left: 0 });
   const [modalData, setModalData] = useState<{
     title: string;
     data: Array<FeedbackDetail>;
     filter?: string;
   } | null>(null);
+  const customPickerRef = useRef<HTMLDivElement | null>(null);
+  const customPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const getSelectedDateRangeLabel = () => {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(endDate.getDate() - (timeRange - 1));
-
     const formatter = new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
 
+    if (timeRange === 'custom') {
+      if (!customStartDate || !customEndDate) {
+        return 'Select custom range';
+      }
+
+      return `${formatter.format(new Date(customStartDate))} - ${formatter.format(new Date(customEndDate))}`;
+    }
+
+    const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (selectedDays - 1));
+
     return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
   };
 
   useEffect(() => {
+    if (timeRange === 'custom' && (!customStartDate || !customEndDate)) {
+      return;
+    }
+
     fetchROIData();
-  }, [timeRange]);
+  }, [timeRange, customStartDate, customEndDate]);
+
+  const updateCustomPickerPosition = () => {
+    if (!customPickerTriggerRef.current) return;
+    const rect = customPickerTriggerRef.current.getBoundingClientRect();
+    setCustomPickerPosition({
+      top: rect.bottom + 8,
+      left: rect.right,
+    });
+  };
+
+  useEffect(() => {
+    if (!isCustomPickerOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+      if (customPickerRef.current?.contains(targetNode)) return;
+      if (customPickerTriggerRef.current?.contains(targetNode)) return;
+      setIsCustomPickerOpen(false);
+    };
+
+    updateCustomPickerPosition();
+    const handleViewportChange = () => updateCustomPickerPosition();
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [isCustomPickerOpen]);
+
+  useEffect(() => {
+    if (!isCustomPickerOpen) return;
+    const timer = setTimeout(() => updateCustomPickerPosition(), 0);
+    return () => clearTimeout(timer);
+  }, [isCustomPickerOpen]);
 
   const fetchROIData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/analytics/roi?days=${timeRange}`);
+      const queryParams = new URLSearchParams();
+
+      if (timeRange === 'custom') {
+        queryParams.set('startDate', customStartDate);
+        queryParams.set('endDate', customEndDate);
+      } else {
+        const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+        queryParams.set('days', String(days));
+      }
+
+      const response = await fetch(`/api/analytics/roi?${queryParams.toString()}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch ROI data: ${response.status}`);
@@ -129,6 +200,26 @@ export default function ROIAnalyticsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCustomRangeClick = () => {
+    setTimeRange('custom');
+    setPendingRange({
+      from: customStartDate ? parseISO(customStartDate) : undefined,
+      to: customEndDate ? parseISO(customEndDate) : undefined,
+    });
+    setIsCustomPickerOpen(true);
+  };
+
+  const handleRangeSelect = (range: DateRange | undefined) => {
+    setPendingRange(range);
+  };
+
+  const handleApplyCustomRange = () => {
+    if (!pendingRange?.from || !pendingRange?.to) return;
+    setCustomStartDate(format(pendingRange.from, 'yyyy-MM-dd'));
+    setCustomEndDate(format(pendingRange.to, 'yyyy-MM-dd'));
+    setIsCustomPickerOpen(false);
   };
 
   if (loading) {
@@ -160,6 +251,20 @@ export default function ROIAnalyticsPage() {
   }
 
   const { summary, acceptanceOverTime, editReasonTrends, confidenceScore, editFrequencyByCategory, rawFeedback } = data;
+  const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : acceptanceOverTime.length;
+  const selectedPresetLabel = (() => {
+    if (timeRange === 'custom') return null;
+    const daysForLabel = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (daysForLabel - 1));
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
+  })();
 
   // Handler functions for chart clicks
   const handleCategoryClick = (category: string) => {
@@ -179,7 +284,13 @@ export default function ROIAnalyticsPage() {
     if (!rawFeedback) return;
 
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - timeRange + day - 1);
+    if (timeRange === 'custom' && customStartDate) {
+      startDate.setTime(new Date(customStartDate).getTime());
+      startDate.setHours(0, 0, 0, 0);
+      startDate.setDate(startDate.getDate() + day - 1);
+    } else {
+      startDate.setDate(startDate.getDate() - selectedDays + day - 1);
+    }
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 1);
 
@@ -226,36 +337,98 @@ export default function ROIAnalyticsPage() {
               <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Performance & ROI</h1>
               <p className="text-gray-600">Investment impact analysis and trend insights</p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-gray-600 whitespace-nowrap">
-                Date Range: <span className="font-medium text-gray-800">{getSelectedDateRangeLabel()}</span>
-              </div>
+            <div className="flex flex-col items-start gap-2">
               <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm">
                 <button
-                  onClick={() => setTimeRange(7)}
+                  onClick={() => setTimeRange('7d')}
                   className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === 7 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                    timeRange === '7d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
                   }`}
                 >
                   Last 7 Days
                 </button>
                 <button
-                  onClick={() => setTimeRange(30)}
+                  onClick={() => setTimeRange('30d')}
                   className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === 30 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                    timeRange === '30d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
                   }`}
                 >
                   Last 30 Days
                 </button>
                 <button
-                  onClick={() => setTimeRange(90)}
+                  onClick={() => setTimeRange('90d')}
                   className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === 90 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                    timeRange === '90d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
                   }`}
                 >
                   Last 90 Days
                 </button>
+                <button
+                  onClick={handleCustomRangeClick}
+                  ref={customPickerTriggerRef}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === 'custom' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {timeRange === 'custom' && customStartDate && customEndDate
+                      ? `${format(parseISO(customStartDate), 'MMM d, yyyy')} - ${format(parseISO(customEndDate), 'MMM d, yyyy')}`
+                      : 'Custom Range'}
+                    {timeRange === 'custom' && customStartDate && customEndDate ? <Pencil className="h-3 w-3" /> : null}
+                  </span>
+                </button>
               </div>
+              {selectedPresetLabel ? (
+                <div className="text-xs text-gray-500 whitespace-nowrap">
+                  Date Range: <span className="font-normal text-gray-500">{selectedPresetLabel}</span>
+                </div>
+              ) : null}
+              {isCustomPickerOpen && createPortal(
+                <div
+                  ref={customPickerRef}
+                  className="fixed z-9999 rounded-lg border border-stone-200 bg-white p-3 shadow-xl"
+                  style={{ top: customPickerPosition.top, left: customPickerPosition.left, transform: 'translateX(-100%)' }}
+                >
+                  <DayPicker
+                    mode="range"
+                    selected={pendingRange}
+                    onSelect={handleRangeSelect}
+                    min={1}
+                    disabled={{ after: new Date() }}
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear()}
+                    numberOfMonths={2}
+                    pagedNavigation
+                    className="text-sm"
+                    classNames={{
+                      months: 'flex flex-row gap-6',
+                    }}
+                  />
+                  <div className="mt-3 border-t border-stone-200 pt-3">
+                    <p className="text-xs text-stone-600">
+                      Selected:{' '}
+                      <span className="font-medium text-stone-800">
+                        {pendingRange?.from
+                          ? pendingRange?.to
+                            ? `${format(pendingRange.from, 'MMM d, yyyy')} - ${format(pendingRange.to, 'MMM d, yyyy')}`
+                            : `${format(pendingRange.from, 'MMM d, yyyy')} - Select end date`
+                          : 'Select start and end dates'}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={handleApplyCustomRange}
+                        disabled={!pendingRange?.from || !pendingRange?.to}
+                        className="rounded-md bg-stone-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
             </div>
           </div>
         </div>

@@ -4,16 +4,48 @@ import { prisma } from '@/lib/prisma';
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const days = parseInt(searchParams.get('days') || '30');
+    const daysParam = parseInt(searchParams.get('days') || '30', 10);
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
+    const hasCustomRange = Boolean(startDateParam && endDateParam);
 
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+
+    if (hasCustomRange) {
+      const parsedStartDate = new Date(startDateParam as string);
+      const parsedEndDate = new Date(endDateParam as string);
+
+      if (Number.isNaN(parsedStartDate.getTime()) || Number.isNaN(parsedEndDate.getTime())) {
+        return NextResponse.json({ error: 'Invalid custom date range' }, { status: 400 });
+      }
+
+      if (parsedStartDate > parsedEndDate) {
+        return NextResponse.json({ error: 'Start date cannot be after end date' }, { status: 400 });
+      }
+
+      startDate.setTime(parsedStartDate.getTime());
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setTime(parsedEndDate.getTime());
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 30;
+      startDate.setDate(startDate.getDate() - (days - 1));
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    const rangeDurationDays = Math.max(
+      1,
+      Math.ceil((endDate.getTime() - startDate.getTime() + 1) / (1000 * 60 * 60 * 24))
+    );
 
     // Get feedback data
     const feedbacks = await prisma.aIEditFeedback.findMany({
       where: {
         createdAt: {
           gte: startDate,
+          lte: endDate,
         },
       },
       select: {
@@ -27,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     const totalConversations = feedbacks.length;
     const previousPeriodStart = new Date(startDate);
-    previousPeriodStart.setDate(previousPeriodStart.getDate() - days);
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - rangeDurationDays);
 
     const previousFeedbacks = await prisma.aIEditFeedback.count({
       where: {
