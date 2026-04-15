@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { DayPicker, type DateRange } from 'react-day-picker';
+import { format, parseISO } from 'date-fns';
+import { createPortal } from 'react-dom';
+import 'react-day-picker/dist/style.css';
 
 interface EditRecord {
   id: string;
@@ -32,23 +36,23 @@ export default function EditsDetailPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>();
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [datePickerPosition, setDatePickerPosition] = useState({ top: 0, left: 0 });
   const [toast, setToast] = useState<ToastState | null>(null);
-  const itemsPerPage = 20;
-
-  useEffect(() => {
-    fetchEdits();
-  }, [categoryFilter, currentPage, startDate, endDate]);
-
-  const fetchEdits = async () => {
+  const datePickerRef = useRef<HTMLDivElement | null>(null);
+  const datePickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const fetchEdits = useCallback(async () => {
     try {
       setLoading(true);
 
       // Build query parameters
       const params = new URLSearchParams({
         page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+        limit: pageSize.toString(),
       });
 
       if (categoryFilter !== 'all') {
@@ -74,16 +78,73 @@ export default function EditsDetailPage() {
     } finally {
       setLoading(false);
     }
+  }, [categoryFilter, currentPage, endDate, pageSize, startDate]);
+
+  useEffect(() => {
+    fetchEdits();
+  }, [fetchEdits]);
+
+  const updateDatePickerPosition = () => {
+    if (!datePickerTriggerRef.current) return;
+    const rect = datePickerTriggerRef.current.getBoundingClientRect();
+    setDatePickerPosition({
+      top: rect.bottom + 8,
+      left: rect.right,
+    });
   };
 
-  const handleDateFilter = () => {
-    setCurrentPage(1); // Reset to first page when filtering
-    fetchEdits();
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+      if (datePickerRef.current?.contains(targetNode)) return;
+      if (datePickerTriggerRef.current?.contains(targetNode)) return;
+      setIsDatePickerOpen(false);
+    };
+
+    updateDatePickerPosition();
+    const handleViewportChange = () => updateDatePickerPosition();
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [isDatePickerOpen]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+    const timer = setTimeout(() => updateDatePickerPosition(), 0);
+    return () => clearTimeout(timer);
+  }, [isDatePickerOpen]);
+
+  const handleDateRangeClick = () => {
+    setPendingRange({
+      from: startDate ? parseISO(startDate) : undefined,
+      to: endDate ? parseISO(endDate) : undefined,
+    });
+    setIsDatePickerOpen(true);
+  };
+
+  const handleRangeSelect = (range: DateRange | undefined) => {
+    setPendingRange(range);
+  };
+
+  const handleApplyDateRange = () => {
+    if (!pendingRange?.from || !pendingRange?.to) return;
+    setStartDate(format(pendingRange.from, 'yyyy-MM-dd'));
+    setEndDate(format(pendingRange.to, 'yyyy-MM-dd'));
+    setCurrentPage(1);
+    setIsDatePickerOpen(false);
   };
 
   const clearDateFilter = () => {
     setStartDate('');
     setEndDate('');
+    setPendingRange(undefined);
     setCurrentPage(1);
   };
 
@@ -161,166 +222,246 @@ export default function EditsDetailPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Journey</h1>
-          <p className="text-gray-600">
-            See how AI improved over 90 days by learning from manager corrections.
-            <span className="block text-sm mt-1">
-              <strong>January:</strong> Poor AI responses, heavy manager corrections →
-              <strong> February:</strong> Improving →
-              <strong> March:</strong> AI mastered, minimal edits needed
-            </span>
-          </p>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Journey</h1>
+            <p className="text-gray-600 max-w-4xl">
+              See how AI improved over 90 days by learning from manager corrections.
+              <span className="block text-sm mt-1">
+                <strong>January:</strong> Poor AI responses, heavy manager corrections →
+                <strong> February:</strong> Improving →
+                <strong> March:</strong> AI mastered, minimal edits needed
+              </span>
+            </p>
+          </div>
 
           {/* Filters */}
-          <div className="mt-6 bg-white p-4 rounded-lg shadow-sm border border-(--zoya-analytics-card-border)">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Category Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Filter by Category
-                </label>
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => {
-                    setCategoryFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <div className="mt-4">
+            <div className="w-full">
+              <div className="flex flex-col gap-1.5 lg:flex-row lg:items-end lg:justify-between">
+                <div className="w-full sm:w-36 lg:w-auto">
+                  <p className="mt-5 flex h-7.5 items-center px-1 text-xs text-gray-700 sm:mt-0">
+                    <span className="font-medium">Total Edits:</span>
+                    <span className="ml-1 font-semibold text-gray-800">{totalCount.toLocaleString()}</span>
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end lg:justify-end">
+                  {/* Category Filter */}
+                  <div className="w-full sm:w-36">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Category
+                    </label>
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => {
+                        setCategoryFilter(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All Categories</option>
+                      <option value="TONE_ADJUSTMENT">Tone Adjustment</option>
+                      <option value="PRODUCT_CORRECTION">Product Correction</option>
+                      <option value="ACCURACY_ISSUE">Accuracy Issue</option>
+                      <option value="LENGTH_PROBLEM">Length Problem</option>
+                      <option value="LANGUAGE_QUALITY">Language Quality</option>
+                      <option value="COMPLETE_REWRITE">Complete Rewrite</option>
+                      <option value="MINOR_EDIT">Minor Edit</option>
+                      <option value="NONE">No Edit</option>
+                    </select>
+                  </div>
+
+                  {/* Date Range Filter */}
+                  <div className="w-full sm:w-[210px] md:w-[220px] lg:w-[230px]">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Date Range
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleDateRangeClick}
+                      ref={datePickerTriggerRef}
+                      className="flex h-7.5 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-2 text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <span className="truncate text-xs text-gray-700">
+                        {startDate && endDate
+                          ? `${format(parseISO(startDate), 'MMM d, yyyy')} - ${format(parseISO(endDate), 'MMM d, yyyy')}`
+                          : 'Select start and end dates'}
+                      </span>
+                      {startDate && endDate ? (
+                        <Pencil className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Page Size Filter */}
+                  <div className="w-full sm:w-24">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Page Size
+                    </label>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {isDatePickerOpen && createPortal(
+                <div
+                  ref={datePickerRef}
+                  className="fixed z-9999 rounded-lg border border-stone-200 bg-white p-3 shadow-xl"
+                  style={{ top: datePickerPosition.top, left: datePickerPosition.left, transform: 'translateX(-100%)' }}
                 >
-                  <option value="all">All Categories</option>
-                  <option value="TONE_ADJUSTMENT">Tone Adjustment</option>
-                  <option value="PRODUCT_CORRECTION">Product Correction</option>
-                  <option value="ACCURACY_ISSUE">Accuracy Issue</option>
-                  <option value="LENGTH_PROBLEM">Length Problem</option>
-                  <option value="LANGUAGE_QUALITY">Language Quality</option>
-                  <option value="COMPLETE_REWRITE">Complete Rewrite</option>
-                  <option value="MINOR_EDIT">Minor Edit</option>
-                  <option value="NONE">No Edit</option>
-                </select>
-              </div>
+                  <DayPicker
+                    mode="range"
+                    selected={pendingRange}
+                    onSelect={handleRangeSelect}
+                    min={1}
+                    disabled={{ after: new Date() }}
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear()}
+                    numberOfMonths={2}
+                    pagedNavigation
+                    className="text-sm"
+                    classNames={{
+                      months: 'flex flex-row gap-6',
+                    }}
+                  />
+                  <div className="mt-3 border-t border-stone-200 pt-3">
+                    <p className="text-xs text-stone-600">
+                      Selected:{' '}
+                      <span className="font-medium text-stone-800">
+                        {pendingRange?.from
+                          ? pendingRange?.to
+                            ? `${format(pendingRange.from, 'MMM d, yyyy')} - ${format(pendingRange.to, 'MMM d, yyyy')}`
+                            : `${format(pendingRange.from, 'MMM d, yyyy')} - Select end date`
+                          : 'Select start and end dates'}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={handleApplyDateRange}
+                        disabled={!pendingRange?.from || !pendingRange?.to}
+                        className="rounded-md bg-stone-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
 
-              {/* Date Range Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              {/* Filter Actions */}
+              {(startDate || endDate) && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={clearDateFilter}
+                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-100"
+                  >
+                    Clear Date Filter
+                  </button>
+                  <span className="flex items-center text-xs text-gray-600">
+                    {startDate && `From: ${new Date(startDate).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}`}
+                    {startDate && endDate && ' - '}
+                    {endDate && `To: ${new Date(endDate).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}`}
+                  </span>
+                </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Filter Actions */}
-            {(startDate || endDate) && (
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={clearDateFilter}
-                  className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Clear Date Filter
-                </button>
-                <span className="text-sm text-gray-600 flex items-center">
-                  {startDate && `From: ${new Date(startDate).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                  })}`}
-                  {startDate && endDate && ' - '}
-                  {endDate && `To: ${new Date(endDate).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                  })}`}
-                </span>
-              </div>
-            )}
-
-            {/* Results Count */}
-            <div className="mt-4 text-sm text-gray-600">
-              Showing {edits.length} of {totalCount} edits
-            </div>
+          </div>
           </div>
         </div>
 
         {/* Edits List */}
         <div className="space-y-6">
           {edits.map((edit) => (
-            <div key={edit.id} className="bg-white rounded-lg shadow-md overflow-hidden border border-(--zoya-analytics-card-border)">
+            <div key={edit.id} className="overflow-hidden rounded-lg border border-(--zoya-analytics-card-border) bg-white shadow-sm transition hover:shadow">
               {/* Header */}
               <div
-                className="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50"
+                className="cursor-pointer border-b border-gray-200 p-4 hover:bg-gray-50"
                 onClick={() => toggleExpand(edit.id)}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      {/* Month indicator for learning progression */}
-                      {(() => {
-                        const month = new Date(edit.createdAt).getMonth();
-                        const isJan = month === 0;
-                        const isFeb = month === 1;
-                        const isMar = month === 2;
-                        return (
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            isJan ? 'bg-red-100 text-red-700' :
-                            isFeb ? 'bg-yellow-100 text-yellow-700' :
-                            isMar ? 'bg-green-100 text-green-700' :
-                            'bg-gray-100 text-gray-700'
-                          }`}>
-                            {isJan ? '📚 Jan: Learning' : isFeb ? '📈 Feb: Improving' : isMar ? '🎯 Mar: Mastered' : 'Unknown'}
-                          </span>
-                        );
-                      })()}
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getCategoryColor(edit.editCategory)}`}>
-                        {edit.editCategory.replace(/_/g, ' ')}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        Edited by {edit.editedBy}
-                      </span>
-                      <span className="text-sm text-gray-400">
-                        {new Date(edit.createdAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </span>
+                <div className="flex items-center justify-between gap-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex flex-wrap items-end gap-3">
+                      <div>
+                        {(() => {
+                          const month = new Date(edit.createdAt).getMonth();
+                          const status = month === 0 ? 'Jan: Learning' : month === 1 ? 'Feb: Improving' : month === 2 ? 'Mar: Mastered' : 'Unknown';
+                          const statusClassName =
+                            month === 0 ? 'text-red-700' :
+                            month === 1 ? 'text-yellow-700' :
+                            month === 2 ? 'text-green-700' :
+                            'text-gray-700';
+
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                Category
+                              </span>
+                              <span className={`inline-block rounded px-2 py-1 text-xs font-semibold ${getCategoryColor(edit.editCategory)}`}>
+                                {edit.editCategory.replace(/_/g, ' ')}
+                              </span>
+                              <p className="text-xs text-gray-600">
+                                {edit.editedBy} • {new Date(edit.createdAt).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric'
+                                })} • <span className={`font-semibold ${statusClassName}`}>{status}</span>
+                              </p>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600 font-medium mb-1">
-                      Customer Query: "{edit.customerQuery}"
+
+                    <p className=" truncate text-xl font-medium leading-tight text-gray-900">
+                      &quot;{edit.customerQuery}&quot;
                     </p>
-                    <div className="flex gap-4 text-sm">
-                      <span>
-                        Acceptance: <span className={`font-semibold ${getAcceptanceColor(edit.acceptanceScore)}`}>
+                  </div>
+
+                  <div className="flex min-w-[300px] shrink-0 flex-col items-end justify-center gap-2 pl-6">
+                    <div className="grid grid-cols-[auto_auto_auto] items-start gap-6">
+                      <div className="text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Acceptance</p>
+                        <p className={`text-xl font-bold leading-none ${getAcceptanceColor(edit.acceptanceScore)}`}>
                           {(edit.acceptanceScore * 100).toFixed(1)}%
-                        </span>
-                      </span>
-                      <span>
-                        Similarity: <span className="font-semibold">{(edit.similarityScore * 100).toFixed(1)}%</span>
-                      </span>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Similarity</p>
+                        <p className="text-xl font-bold leading-none text-gray-900">{(edit.similarityScore * 100).toFixed(1)}%</p>
+                      </div>
+                      <button className="self-start pt-1">
+                        {expandedIds.has(edit.id) ? (
+                          <ChevronUp className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-gray-500" />
+                        )}
+                      </button>
                     </div>
                   </div>
-                  <button className="ml-4">
-                    {expandedIds.has(edit.id) ? (
-                      <ChevronUp className="w-5 h-5 text-gray-500" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-500" />
-                    )}
-                  </button>
                 </div>
               </div>
 
@@ -344,7 +485,7 @@ export default function EditsDetailPage() {
                     <div>
                       <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                         <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-                        Manager's Correction (Target Response)
+                        Manager&apos;s Correction (Target Response)
                       </h3>
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{edit.editedContent}</p>
