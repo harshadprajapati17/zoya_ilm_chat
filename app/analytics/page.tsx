@@ -151,19 +151,19 @@ export default function AnalyticsPage() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => (window.location.href = '/analytics/insights')}
+                onClick={() => (window.location.href = '/dashboard/analytics/insights')}
                 className="px-4 py-2 bg-stone-600 text-white rounded-lg hover:bg-stone-700 transition"
               >
                 Customer Insights
               </button>
               <button
-                onClick={() => (window.location.href = '/analytics/roi')}
+                onClick={() => (window.location.href = '/dashboard/analytics/roi')}
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
               >
                 ROI Dashboard
               </button>
               <button
-                onClick={() => (window.location.href = '/analytics/edits')}
+                onClick={() => (window.location.href = '/dashboard/analytics/edits')}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 View Detailed Edits

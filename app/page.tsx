@@ -54,7 +54,7 @@ export default function Home() {
           </Link>
 
           {/* Lead Management Dashboard Card */}
-          <Link href="/dashboard">
+          <Link href="/dashboard/conversation">
             <div className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-pink-500">
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-pink-100 rounded-full">
