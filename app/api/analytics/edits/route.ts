@@ -78,16 +78,6 @@ export async function GET(request: NextRequest) {
         improvementNeeded: true,
         customerQuery: true,
         createdAt: true,
-        suggestedReply: {
-          select: {
-            confidence: true,
-            message: {
-              select: {
-                conversationId: true,
-              },
-            },
-          },
-        },
       },
     });
 
