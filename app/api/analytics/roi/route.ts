@@ -225,10 +225,16 @@ export async function GET(request: NextRequest) {
 
     const daysInPeriod = Math.floor(days / 2);
 
-    // Check if we have sufficient data coverage (at least 50% of days with data)
-    const expectedDays = days;
+    // Check if we have sufficient realistic data
+    // Count total messages and check if average per day is realistic (should be 30+ messages/day for jewelry store)
     const actualDaysWithData = Object.keys(dailyMessageCounts).length;
-    const hasSufficientData = actualDaysWithData >= (expectedDays * 0.5);
+    const totalMessages = Object.values(dailyMessageCounts).reduce((sum, count) => sum + count, 0);
+    const avgMessagesPerDay = actualDaysWithData > 0 ? totalMessages / actualDaysWithData : 0;
+
+    // Need both: data for at least 50% of days AND at least 30 messages/day average
+    const hasEnoughDays = actualDaysWithData >= (days * 0.5);
+    const hasRealisticVolume = avgMessagesPerDay >= 30;
+    const hasSufficientData = hasEnoughDays && hasRealisticVolume;
 
     if (hasSufficientData && Object.keys(dailyMessageCounts).length > 0) {
       // Calculate average daily messages for each half
