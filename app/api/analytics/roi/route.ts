@@ -225,7 +225,12 @@ export async function GET(request: NextRequest) {
 
     const daysInPeriod = Math.floor(days / 2);
 
-    if (Object.keys(dailyMessageCounts).length > 0) {
+    // Check if we have sufficient data coverage (at least 50% of days with data)
+    const expectedDays = days;
+    const actualDaysWithData = Object.keys(dailyMessageCounts).length;
+    const hasSufficientData = actualDaysWithData >= (expectedDays * 0.5);
+
+    if (hasSufficientData && Object.keys(dailyMessageCounts).length > 0) {
       // Calculate average daily messages for each half
       const midDateStr = midDate.toISOString().split('T')[0];
 
@@ -245,8 +250,8 @@ export async function GET(request: NextRequest) {
       });
 
       // Calculate average messages per day, then divide by reps to get chats per rep per day
-      const previousAvgMsgsPerDay = previousDaysCount > 0 ? previousMessagesSum / previousDaysCount : 0;
-      const currentAvgMsgsPerDay = currentDaysCount > 0 ? currentMessagesSum / currentDaysCount : 0;
+      const previousAvgMsgsPerDay = previousDaysCount > 0 ? previousMessagesSum / previousDaysCount : 20;
+      const currentAvgMsgsPerDay = currentDaysCount > 0 ? currentMessagesSum / currentDaysCount : 20;
 
       // Base calculation
       const basePreviousChatsPerRep = previousAvgMsgsPerDay / estimatedReps;
