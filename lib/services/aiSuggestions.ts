@@ -548,9 +548,9 @@ HOW TO RESPOND:
   "Here are our Zoya stores in [city]:
 
   1. **[Store Name]** ([Store Type])
-     📍 [Full Address]
-     📞 [Phone if available]
-     ✉️ [Email if available]"
+     Address: [Full Address]
+     Phone: [Phone if available]
+     Email: [Email if available]"
 - If showing product availability at stores, format like:
   "Great news! I found some beautiful [category] pieces available near you:
 
