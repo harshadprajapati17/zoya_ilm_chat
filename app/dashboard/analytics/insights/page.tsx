@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { TrendingUp, TrendingDown, Users, Target, Info, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, Users, Target, Info, X, MapPin } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface RawDataItem {
@@ -112,6 +112,15 @@ const INTENT_COLORS = {
   'Investment': '#D4B896',
   'Browsing': '#E5D4B8',
 };
+
+const GEOGRAPHY_INSIGHTS = [
+  { city: 'Mumbai', revenueInLakhs: 18.6, conversations: 248 },
+  { city: 'Delhi', revenueInLakhs: 16.9, conversations: 231 },
+  { city: 'Pune', revenueInLakhs: 12.7, conversations: 186 },
+  { city: 'Bengaluru', revenueInLakhs: 14.8, conversations: 205 },
+  { city: 'Hyderabad', revenueInLakhs: 11.9, conversations: 174 },
+  { city: 'Chennai', revenueInLakhs: 13.4, conversations: 193 },
+];
 
 export default function CustomerInsightsPage() {
   const [data, setData] = useState<InsightsData | null>(null);
@@ -511,6 +520,28 @@ export default function CustomerInsightsPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Row 3: Geography Insights */}
+        <div className="bg-white rounded-lg shadow p-6 border border-(--zoya-analytics-card-border) mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Geography Insights</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {GEOGRAPHY_INSIGHTS.map((item) => (
+              <div
+                key={item.city}
+                className="rounded-lg border border-stone-200 bg-stone-50/60 px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MapPin className="w-4 h-4 text-stone-600 shrink-0" />
+                    <span className="text-sm font-semibold text-gray-900 truncate">{item.city}</span>
+                  </div>
+                  <span className="text-sm font-bold text-stone-700 whitespace-nowrap">₹{item.revenueInLakhs.toFixed(1)}L</span>
+                </div>
+                <p className="mt-2 text-xs text-gray-600">{item.conversations.toLocaleString()} conversations</p>
+              </div>
+            ))}
           </div>
         </div>
 
