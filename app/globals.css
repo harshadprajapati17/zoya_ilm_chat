@@ -2,18 +2,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #faf8f5;
+  /* App shell + chat: light warm neutrals (rail slightly cream vs. near-white chat) */
+  --background: #fdfcfa;
   --foreground: #2c2c2c;
   --zoya-gold: #8b7355;
   --zoya-gold-light: #a89279;
   --zoya-gold-pale: #c4b398;
   --zoya-gold-bg: rgba(139, 115, 85, 0.08);
   --zoya-bg-soft: #f5f0eb;
+  /* Dashboard shell: main nav + conversation list column share the same surface */
+  --zoya-sidebar-bg: #ffffff;
+  --zoya-conversation-rail-bg: var(--zoya-sidebar-bg);
+  /* Composer / reply strip: subtle separation from message canvas */
+  --zoya-chat-footer-bg: #faf8f5;
   --zoya-border: #d4c5b0;
   --zoya-border-light: #e8dfd2;
+  /* Conversation rail search field (reference: warm tan border + taupe label) */
+  --zoya-rail-search-border: #d6cdc2;
+  --zoya-rail-search-muted: #8a8076;
   --zoya-accent: #6b5b4e;
   --zoya-muted: #9e9590;
   --zoya-panel: #fff;
+  --zoya-analytics-card-border: #c2c0bd;
   --zoya-ok: #5b8c5a;
   --zoya-warn: #c4933f;
   --zoya-danger: #b85c5c;
@@ -22,7 +32,7 @@
 }
 
 @theme inline {
-  --color-background: #faf8f5;
+  --color-background: #fdfcfa;
   --color-foreground: #2c2c2c;
   --font-sans: "DM Sans", "Segoe UI", Arial, sans-serif;
   --font-mono: var(--font-geist-mono);
@@ -47,7 +57,7 @@ body {
 }
 
 .zoya-input {
-  background: #faf8f5;
+  background: var(--background);
   border: 1px solid var(--zoya-border-light);
   border-radius: 10px;
   color: #2c2c2c;
@@ -89,19 +99,23 @@ body {
 }
 
 .zoya-chat-surface {
-  background: #faf8f5;
+  /* Slightly deeper neutral so white incoming bubbles stand out. */
+  background: #f2f0ed;
 }
 
 .zoya-bubble-customer {
-  background: #fff;
-  border: 1px solid var(--zoya-border-light);
-  border-bottom-left-radius: 3px;
+  background: #ffffff;
+  border: 1px solid #dfd8cf;
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
 }
 
 .zoya-bubble-agent {
-  background: linear-gradient(135deg, var(--zoya-bg-soft), #fff);
-  border: 1px solid var(--zoya-border);
-  border-bottom-right-radius: 3px;
+  background: #8a7456;
+  border: 1px solid #7a654b;
+  border-radius: 12px;
+  border-bottom-right-radius: 4px;
+  color: #ffffff;
 }
 
 .zoya-ai-panel {

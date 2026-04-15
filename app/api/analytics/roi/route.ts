@@ -244,7 +244,14 @@ function generateAcceptanceTimeSeries(
   feedback: Array<{ acceptanceScore: number | null; createdAt: Date }>,
   days: number
 ) {
-  const result: Array<{ day: number; rate: number }> = [];
+  const result: Array<{ day: number; dateLabel: string; rate: number }> = [];
+  const startDate = new Date();
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - (days - 1));
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 
   // Group feedback by day and calculate daily acceptance rate
   const dailyData: Record<number, { sum: number; count: number }> = {};
@@ -305,6 +312,9 @@ function generateAcceptanceTimeSeries(
 
     result.push({
       day: i,
+      dateLabel: dateFormatter.format(
+        new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + (i - 1))
+      ),
       rate: parseFloat(Math.max(50, Math.min(80, rate)).toFixed(1)), // Clamp between 50-80
     });
   }
@@ -319,14 +329,22 @@ function generateEditReasonTrends(
 ) {
   const result: Array<{
     day: number;
+    dateLabel: string;
     wrongTone: number;
     wrongProduct: number;
     missingDetails: number;
     inaccurateInfo: number;
   }> = [];
+  const startDate = new Date();
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - (days - 1));
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 
   // Map actual DB edit categories to reason types
-  const categoryMap: Record<string, keyof Omit<typeof result[0], 'day'>> = {
+  const categoryMap: Record<string, 'wrongTone' | 'wrongProduct' | 'missingDetails' | 'inaccurateInfo'> = {
     TONE_ADJUSTMENT: 'wrongTone',
     PRODUCT_CORRECTION: 'wrongProduct',
     ACCURACY_ISSUE: 'inaccurateInfo',
@@ -441,6 +459,9 @@ function generateEditReasonTrends(
       // Blend actual with trend (85% trend, 15% actual for clear learning pattern)
       result.push({
         day: i,
+        dateLabel: dateFormatter.format(
+          new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + (i - 1))
+        ),
         wrongTone: parseFloat(Math.max(3, (trendValues.wrongTone * 0.85 + actualValues.wrongTone * 0.15)).toFixed(1)),
         wrongProduct: parseFloat(Math.max(4, (trendValues.wrongProduct * 0.85 + actualValues.wrongProduct * 0.15)).toFixed(1)),
         missingDetails: parseFloat(Math.max(5, (trendValues.missingDetails * 0.85 + actualValues.missingDetails * 0.15)).toFixed(1)),
@@ -451,6 +472,9 @@ function generateEditReasonTrends(
       const noise = () => (Math.random() - 0.5) * 0.8;
       result.push({
         day: i,
+        dateLabel: dateFormatter.format(
+          new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + (i - 1))
+        ),
         wrongTone: parseFloat(Math.max(3, trendValues.wrongTone + noise()).toFixed(1)),
         wrongProduct: parseFloat(Math.max(4, trendValues.wrongProduct + noise()).toFixed(1)),
         missingDetails: parseFloat(Math.max(5, trendValues.missingDetails + noise()).toFixed(1)),
@@ -467,7 +491,14 @@ function calculateConfidenceProgression(
   feedback: Array<{ acceptanceScore: number | null; createdAt: Date }>,
   days: number
 ) {
-  const history: Array<{ day: number; score: number }> = [];
+  const history: Array<{ day: number; dateLabel: string; score: number }> = [];
+  const startDate = new Date();
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - (days - 1));
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 
   // Group by day and calculate confidence from actual data
   const dailyScores: Record<number, number[]> = {};
@@ -529,6 +560,9 @@ function calculateConfidenceProgression(
 
     history.push({
       day: i,
+      dateLabel: dateFormatter.format(
+        new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + (i - 1))
+      ),
       score: parseFloat(Math.max(40, Math.min(80, score)).toFixed(1)), // Clamp between 40-80
     });
   }

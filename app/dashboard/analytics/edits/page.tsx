@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface EditRecord {
   id: string;
@@ -20,10 +19,10 @@ interface EditRecord {
 }
 
 export default function EditsDetailPage() {
-  const router = useRouter();
   const [edits, setEdits] = useState<EditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [improvementActions, setImprovementActions] = useState<Record<string, 'accepted' | 'rejected'>>({});
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -92,6 +91,18 @@ export default function EditsDetailPage() {
     setExpandedIds(newExpanded);
   };
 
+  const handleImprovementAction = (
+    editId: string,
+    areaIndex: number,
+    action: 'accepted' | 'rejected'
+  ) => {
+    const actionKey = `${editId}-${areaIndex}`;
+    setImprovementActions((prev) => ({
+      ...prev,
+      [actionKey]: action,
+    }));
+  };
+
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
       TONE_ADJUSTMENT: 'bg-blue-100 text-blue-800',
@@ -114,7 +125,7 @@ export default function EditsDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <div className="text-xl text-gray-700">Loading edits...</div>
@@ -124,17 +135,10 @@ export default function EditsDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <button
-            onClick={() => router.push('/analytics')}
-            className="flex items-center text-blue-600 hover:text-blue-700 mb-4"
-          >
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            Back to Analytics
-          </button>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Journey</h1>
           <p className="text-gray-600">
             See how AI improved over 90 days by learning from manager corrections.
@@ -146,7 +150,7 @@ export default function EditsDetailPage() {
           </p>
 
           {/* Filters */}
-          <div className="mt-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="mt-6 bg-white p-4 rounded-lg shadow-sm border border-(--zoya-analytics-card-border)">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Category Filter */}
               <div>
@@ -234,7 +238,7 @@ export default function EditsDetailPage() {
         {/* Edits List */}
         <div className="space-y-6">
           {edits.map((edit) => (
-            <div key={edit.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div key={edit.id} className="bg-white rounded-lg shadow-md overflow-hidden border border-(--zoya-analytics-card-border)">
               {/* Header */}
               <div
                 className="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50"
@@ -355,14 +359,38 @@ export default function EditsDetailPage() {
                     {edit.improvementNeeded && edit.improvementNeeded.length > 0 && (
                       <div>
                         <h4 className="text-xs font-medium text-gray-600 mb-2">AI Needs Improvement In:</h4>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="space-y-2">
                           {edit.improvementNeeded.map((area, idx) => (
-                            <span
+                            <div
                               key={idx}
-                              className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full"
+                              className="flex flex-col gap-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 sm:flex-row sm:items-center sm:justify-between"
                             >
-                              {area}
-                            </span>
+                              <span className="text-sm text-yellow-900">{area}</span>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleImprovementAction(edit.id, idx, 'accepted')}
+                                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                                    improvementActions[`${edit.id}-${idx}`] === 'accepted'
+                                      ? 'bg-green-600 text-white'
+                                      : 'bg-green-100 text-green-800 hover:bg-green-200'
+                                  }`}
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleImprovementAction(edit.id, idx, 'rejected')}
+                                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                                    improvementActions[`${edit.id}-${idx}`] === 'rejected'
+                                      ? 'bg-red-600 text-white'
+                                      : 'bg-red-100 text-red-800 hover:bg-red-200'
+                                  }`}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -375,14 +403,14 @@ export default function EditsDetailPage() {
         </div>
 
         {edits.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-lg shadow">
+          <div className="text-center py-12 bg-white rounded-lg shadow border border-(--zoya-analytics-card-border)">
             <p className="text-gray-500">No edits found for the selected filters.</p>
           </div>
         )}
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-between bg-white p-4 rounded-lg shadow">
+          <div className="mt-8 flex items-center justify-between bg-white p-4 rounded-lg shadow border border-(--zoya-analytics-card-border)">
             <div className="text-sm text-gray-700">
               Page {currentPage} of {totalPages}
             </div>

@@ -9,7 +9,11 @@
     "lint": "eslint",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:import:supabase": "bash ./scripts/import-supabase-seed.sh",
+    "db:import:supabase:database-url": "DB_URL_VAR=DATABASE_URL bash ./scripts/import-supabase-seed.sh",
+    "db:verify:supabase": "bash -c 'set -a; source .env; set +a; psql \"$DIRECT_URL\" -c \"select count(*) as users from public.\\\"User\\\";\" -c \"select count(*) as products from public.\\\"Product\\\";\" -c \"select count(*) as messages from public.\\\"Message\\\";\"'",
+    "db:shift-insights-dates": "tsx scripts/shift-aieditfeedback-created-at-months.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

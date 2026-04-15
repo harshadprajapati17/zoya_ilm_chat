@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, Users, Target, AlertCircle, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { TrendingUp, TrendingDown, Users, Target, Info, X } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface RawDataItem {
@@ -53,6 +52,58 @@ interface InsightsData {
   rawData: RawDataItem[];
 }
 
+const OCCASION_KEYWORDS = [
+  'occasion',
+  'festival',
+  'festive',
+  'wedding later',
+  'next month',
+  'not now',
+  'later',
+  'later on',
+  'after some time',
+  'when needed',
+  'in future',
+  'future purchase',
+];
+
+const isHesitationMatch = (reason: string, item: RawDataItem): boolean => {
+  const query = item.customerQuery?.toLowerCase() || '';
+  const lowAcceptance = item.acceptanceScore < 0.5;
+
+  if (!lowAcceptance) return false;
+
+  if (reason === 'Price too high') {
+    return query.includes('expensive') || query.includes('price');
+  }
+
+  if (reason === 'Needs comparison') {
+    return query.includes('compare') || query.includes('other');
+  }
+
+  if (reason === 'Not sure about design') {
+    return query.includes('design') || query.includes('style');
+  }
+
+  if (reason === 'Waiting for occasion') {
+    return OCCASION_KEYWORDS.some((keyword) => query.includes(keyword));
+  }
+
+  if (reason === 'Other objections') {
+    return !(
+      query.includes('expensive') ||
+      query.includes('price') ||
+      query.includes('compare') ||
+      query.includes('other') ||
+      query.includes('design') ||
+      query.includes('style') ||
+      OCCASION_KEYWORDS.some((keyword) => query.includes(keyword))
+    );
+  }
+
+  return lowAcceptance;
+};
+
 const COLORS = ['#8B7355', '#A67C52', '#C9A882', '#D4B896', '#E5D4B8'];
 const INTENT_COLORS = {
   'Gifting': '#8B7355',
@@ -63,7 +114,6 @@ const INTENT_COLORS = {
 };
 
 export default function CustomerInsightsPage() {
-  const router = useRouter();
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
@@ -73,6 +123,21 @@ export default function CustomerInsightsPage() {
     data: RawDataItem[];
     filterFn?: (item: RawDataItem) => boolean;
   } | null>(null);
+
+  const getSelectedDateRangeLabel = () => {
+    const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (selectedDays - 1));
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
+  };
 
   useEffect(() => {
     fetchInsights();
@@ -125,7 +190,7 @@ export default function CustomerInsightsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600 mx-auto mb-4"></div>
           <div className="text-xl text-gray-700">Loading insights...</div>
@@ -137,59 +202,65 @@ export default function CustomerInsightsPage() {
   if (!data) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <button
-            onClick={() => router.push('/analytics')}
-            className="flex items-center text-stone-600 hover:text-stone-700 mb-4"
-          >
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            Back to Analytics
-          </button>
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Customer Insights</h1>
               <p className="text-gray-600">Deep dive into customer behavior and preferences</p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setTimeRange('7d')}
-                className={`px-4 py-2 rounded-lg ${timeRange === '7d' ? 'bg-stone-600 text-white' : 'bg-white text-gray-700 border'}`}
-              >
-                7 Days
-              </button>
-              <button
-                onClick={() => setTimeRange('30d')}
-                className={`px-4 py-2 rounded-lg ${timeRange === '30d' ? 'bg-stone-600 text-white' : 'bg-white text-gray-700 border'}`}
-              >
-                30 Days
-              </button>
-              <button
-                onClick={() => setTimeRange('90d')}
-                className={`px-4 py-2 rounded-lg ${timeRange === '90d' ? 'bg-stone-600 text-white' : 'bg-white text-gray-700 border'}`}
-              >
-                90 Days
-              </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-sm text-gray-600 whitespace-nowrap">
+                Date Range: <span className="font-medium text-gray-800">{getSelectedDateRangeLabel()}</span>
+              </div>
+              <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm">
+                <button
+                  onClick={() => setTimeRange('7d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === '7d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => setTimeRange('30d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === '30d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 30 Days
+                </button>
+                <button
+                  onClick={() => setTimeRange('90d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === '90d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 90 Days
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <MetricCard
             title="Total Conversations"
             value={data.metrics.totalConversations.toLocaleString()}
             trend={data.metrics.totalConversationsTrend}
             subtitle="All chats"
+            tooltipDescription="Total number of customer interactions (chat + calls) within the selected time period."
             onClick={() => openModal('Total Conversations - All Customer Queries')}
           />
           <MetricCard
-            title="High-Intent Customers"
+            title="High Intent Customers"
             value={data.metrics.highIntentCustomers.toLocaleString()}
             trend={data.metrics.highIntentTrend}
             subtitle="Ready to engage"
+            tooltipDescription="Customers identified as having strong purchase intent based on conversation depth and intent signals."
             onClick={() => openModal('High-Intent Customers (Acceptance Score > 70%)', (item) => item.acceptanceScore > 0.7)}
           />
           <MetricCard
@@ -197,30 +268,27 @@ export default function CustomerInsightsPage() {
             value={data.metrics.qualifiedLeads.toLocaleString()}
             trend={data.metrics.qualifiedLeadsTrend}
             subtitle="Strong signals"
+            tooltipDescription="Customers who showed clear buying interest (e.g., asked for store location, product details, or next steps)."
             onClick={() => openModal('Qualified Leads (Top 19%)', (item) => item.acceptanceScore > 0.65)}
-          />
-          <MetricCard
-            title="Likely Buyers"
-            value={data.metrics.likelyBuyers}
-            trend={data.metrics.likelyBuyersTrend}
-            subtitle="Predicted"
-            onClick={() => openModal('Likely Buyers (Top 8.6%)', (item) => item.acceptanceScore > 0.75)}
-          />
-          <MetricCard
-            title="Lost Opportunities"
-            value={data.metrics.lostOpportunities}
-            trend={data.metrics.lostOpportunitiesTrend}
-            subtitle="Resolved (pending)"
-            negative
-            onClick={() => openModal('Lost Opportunities (Bottom 2.7%)', (item) => item.acceptanceScore < 0.3)}
           />
         </div>
 
         {/* Row 1: Customer Intent + Product Demand */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Customer Intent Breakdown */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Intent Breakdown</h3>
+          <div className="bg-white rounded-lg shadow p-6 border border-(--zoya-analytics-card-border)">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Customer Intent Breakdown</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Customer Intent Breakdown</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Classification of customer queries based on the underlying purchase intent inferred from conversation context.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-8">
               <div className="w-48 h-48 cursor-pointer" onClick={() => openModal('All Customer Intents - Complete Breakdown')}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -280,19 +348,22 @@ export default function CustomerInsightsPage() {
                 ))}
               </div>
             </div>
-            <div className="mt-4 pt-4 border-t text-sm text-gray-600">
-              <p className="font-medium mb-1">Explore by occasion:</p>
-              <div className="flex flex-wrap gap-2">
-                {['Anniversary (342)', 'Birthday (288)', 'Festive (456)', 'Personal milestone (73)'].map((tag, idx) => (
-                  <span key={`occasion-${idx}`} className="px-2 py-1 bg-gray-100 rounded text-xs">{tag}</span>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Product Demand Intelligence */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Demand Intelligence</h3>
+          <div className="bg-white rounded-lg shadow p-6 border border-(--zoya-analytics-card-border)">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Product Demand Intelligence</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Product Demand Intelligence</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Product categories receiving the highest customer interest based on query volume.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-4">
               {data.productDemand.map((item, index) => (
                 <div
@@ -323,7 +394,7 @@ export default function CustomerInsightsPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-6 pt-4 border-t">
+            {/* <div className="mt-6 pt-4 border-t">
               <p className="text-sm font-medium text-gray-700 mb-2">Top demand insights:</p>
               <div className="space-y-2">
                 {data.topInsights.map((insight, index) => (
@@ -354,15 +425,26 @@ export default function CustomerInsightsPage() {
                   <li>• Minimalist pendant sets (31 requests)</li>
                 </ul>
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
 
-        {/* Row 2: Price Sensitivity (Full Width) */}
-        <div className="mb-6">
+        {/* Row 2: Price Sensitivity + Customer Hesitation */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Price Sensitivity Analysis */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Price Sensitivity Analysis</h3>
+          <div className="bg-white rounded-lg shadow p-6 border border-(--zoya-analytics-card-border)">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Price Sensitivity Analysis</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Price Sensitivity Analysis</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Distribution of customer queries across different price brackets based on mentioned or inferred budgets.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-4">
               {data.priceSensitivity.map((item, index) => (
                 <div
@@ -376,34 +458,18 @@ export default function CustomerInsightsPage() {
                 >
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm text-gray-700">{item.range}</span>
-                    <div className="flex items-center gap-4">
-                      <span className="text-xs text-gray-500">Volume: {item.volume}%</span>
-                      <span className="text-xs text-gray-500">Conv: {item.conversion}%</span>
-                    </div>
+                    <span className="text-xs text-gray-500">Conv: {item.conversion}%</span>
                   </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-stone-400 h-2 rounded-full"
-                        style={{ width: `${item.volume}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex-1 bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-stone-700 h-2 rounded-full"
-                        style={{ width: `${item.conversion}%` }}
-                      ></div>
-                    </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-stone-700 h-2 rounded-full"
+                      style={{ width: `${item.conversion}%` }}
+                    ></div>
                   </div>
                 </div>
               ))}
             </div>
             <div className="mt-6 pt-4 border-t space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <TrendingUp className="w-4 h-4 text-green-600" />
-                <span className="text-gray-700">Highest Demand</span>
-                <span className="ml-auto font-semibold">₹2L-₹5L price range</span>
-              </div>
               <div className="flex items-center gap-2 text-sm">
                 <Target className="w-4 h-4 text-blue-600" />
                 <span className="text-gray-700">Highest Conversion</span>
@@ -411,68 +477,27 @@ export default function CustomerInsightsPage() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Row 3: Query Themes + Hesitation Reasons */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Query Themes */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Themes (AI Clustered)</h3>
-            <div className="space-y-2">
-              {data.queryThemes.map((item, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                  onClick={() => {
-                    const themeLower = item.theme.toLowerCase();
-                    openModal(`Query Theme: ${item.theme}`, (dataItem) => {
-                      const query = dataItem.customerQuery?.toLowerCase() || '';
-                      if (themeLower.includes('price')) return query.includes('price') || query.includes('cost') || query.includes('offer');
-                      else if (themeLower.includes('details')) return query.includes('detail') || query.includes('specification') || query.includes('about');
-                      else if (themeLower.includes('availability')) return query.includes('available') || query.includes('stock') || query.includes('have');
-                      else if (themeLower.includes('customization')) return query.includes('custom') || query.includes('personalize') || query.includes('modify');
-                      else if (themeLower.includes('occasion')) return query.includes('occasion') || query.includes('event') || query.includes('celebration');
-                      else if (themeLower.includes('policies')) return query.includes('policy') || query.includes('return') || query.includes('warranty');
-                      return true;
-                    });
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center">
-                      <span className="text-sm font-semibold text-stone-700">{index + 1}</span>
-                    </div>
-                    <span className="text-sm text-gray-700">{item.theme}</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900">{item.count}</span>
+          <div className="bg-white rounded-lg shadow p-6 border border-(--zoya-analytics-card-border)">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Customer Hesitation & Objections</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Customer Hesitation & Objections</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Common reasons customers delay or avoid purchase (e.g., design uncertainty, occasion mismatch).
+                  </p>
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
-
-          {/* Customer Hesitation & Objections */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Hesitation & Objections</h3>
             <div className="space-y-3">
               {data.hesitationReasons.map((item, index) => (
                 <div
                   key={index}
                   className="border-l-4 border-red-200 pl-4 py-2 cursor-pointer hover:bg-gray-50 transition rounded"
                   onClick={() => {
-                    const reasonLower = item.reason.toLowerCase();
-                    openModal(`Hesitation: ${item.reason}`, (dataItem) => {
-                      const query = dataItem.customerQuery?.toLowerCase() || '';
-                      // Low acceptance scores indicate hesitation
-                      if (reasonLower.includes('price')) {
-                        return (query.includes('expensive') || query.includes('price') || query.includes('cost')) && dataItem.acceptanceScore < 0.5;
-                      } else if (reasonLower.includes('comparison')) {
-                        return (query.includes('compare') || query.includes('other') || query.includes('alternative')) && dataItem.acceptanceScore < 0.6;
-                      } else if (reasonLower.includes('design')) {
-                        return (query.includes('design') || query.includes('style') || query.includes('look')) && dataItem.acceptanceScore < 0.6;
-                      } else if (reasonLower.includes('occasion')) {
-                        return (query.includes('later') || query.includes('thinking') || query.includes('maybe')) && dataItem.acceptanceScore < 0.6;
-                      }
-                      return dataItem.acceptanceScore < 0.5;
-                    });
+                    openModal(`Hesitation: ${item.reason}`, (dataItem) => isHesitationMatch(item.reason, dataItem));
                   }}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -480,7 +505,7 @@ export default function CustomerInsightsPage() {
                     <span className="text-sm font-medium text-gray-700">{item.reason}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-500">"{item.reason === 'Price too high' ? 'Bit expensive / needs attention' : item.reason === 'Needs comparison' ? 'I want heavy variety' : item.reason === 'Not sure about design' ? 'This structure / needs attention' : 'Looking for investment-worthy pieces'}"</span>
+                    <span className="text-xs text-gray-500">&quot;{item.reason === 'Price too high' ? 'Bit expensive / needs attention' : item.reason === 'Needs comparison' ? 'I want heavy variety' : item.reason === 'Not sure about design' ? 'This structure / needs attention' : item.reason === 'Waiting for occasion' ? 'Not buying now, waiting for the right moment' : 'Low intent but reason unclear'}&quot;</span>
                     <span className="text-sm font-semibold text-gray-900">{item.count}</span>
                   </div>
                 </div>
@@ -586,16 +611,17 @@ interface MetricCardProps {
   value: string | number;
   trend: number;
   subtitle: string;
+  tooltipDescription?: string;
   negative?: boolean;
   onClick?: () => void;
 }
 
-function MetricCard({ title, value, trend, subtitle, negative, onClick }: MetricCardProps) {
+function MetricCard({ title, value, trend, subtitle, tooltipDescription, negative, onClick }: MetricCardProps) {
   const isPositive = negative ? trend < 0 : trend > 0;
 
   return (
     <div
-      className={`bg-white rounded-lg shadow p-4 ${onClick ? 'cursor-pointer hover:shadow-lg transition' : ''}`}
+      className={`bg-white rounded-lg shadow p-4 border border-(--zoya-analytics-card-border) ${onClick ? 'cursor-pointer hover:shadow-lg transition' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-2">
@@ -617,7 +643,21 @@ function MetricCard({ title, value, trend, subtitle, negative, onClick }: Metric
         </div>
       </div>
       <h3 className="text-2xl font-bold text-gray-900 mb-1">{value}</h3>
-      <p className="text-sm font-medium text-gray-700">{title}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-medium text-gray-700">{title}</p>
+        {tooltipDescription ? (
+          <div
+            className="relative group"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Info className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+            <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-72 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+              <p className="text-xs font-semibold">{title}</p>
+              <p className="mt-1 text-xs text-gray-200">{tooltipDescription}</p>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <p className="text-xs text-gray-500">{subtitle}</p>
     </div>
   );

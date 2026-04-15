@@ -618,26 +618,19 @@ export default function LeadManagementDashboard({
   return (
     <div className="flex h-screen zoya-chat-surface">
       {/* Conversations Sidebar */}
-      <div className="w-72 shrink-0 flex flex-col overflow-hidden border-r bg-white" style={{ borderColor: 'var(--zoya-border-light)' }}>
+      <div
+        className="flex w-72 shrink-0 flex-col overflow-hidden border-r bg-[var(--zoya-sidebar-bg)]"
+        style={{
+          borderColor: 'var(--zoya-border-light)',
+        }}
+      >
+        {/* Title + search share one surface (aligned with main app sidebar) */}
         <header
-          className="shrink-0 border-b px-4 pb-4 pt-5"
+          className="shrink-0 border-b px-4 pt-4 pb-4"
           style={{
             borderColor: 'var(--zoya-border-light)',
-            background: 'linear-gradient(180deg, #ffffff 0%, #fcfaf7 100%)',
           }}
         >
-          <div className="mb-4 flex justify-center">
-            <img
-              src="https://www.zoya.in/on/demandware.static/-/Sites-Zoya-Library/default/dw3635170c/images/zoya-header-logo.png"
-              alt="Zoya"
-              className="h-10 w-auto max-w-full object-contain"
-            />
-          </div>
-          <div
-            className="mx-auto mb-4 h-px w-11 rounded-full"
-            style={{ background: 'var(--zoya-gold-pale)' }}
-            aria-hidden
-          />
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="zoya-heading text-xl font-semibold leading-tight tracking-tight text-[var(--foreground)]">
               Conversations
@@ -652,18 +645,13 @@ export default function LeadManagementDashboard({
               {conversations.length} active
             </span>
           </div>
-        </header>
-
-        <div
-          className="shrink-0 border-b px-3 py-3"
-          style={{ borderColor: 'var(--zoya-border-light)', background: 'var(--zoya-bg-soft)' }}
-        >
           <label htmlFor="conv-sidebar-search" className="sr-only">
             Search conversations
           </label>
-          <div className="relative">
+          <div className="relative mt-3">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--zoya-muted)]"
+              className="pointer-events-none absolute left-3 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-[var(--zoya-rail-search-muted)]"
+              strokeWidth={1.75}
               aria-hidden
             />
             <input
@@ -671,13 +659,13 @@ export default function LeadManagementDashboard({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search…"
-              className="w-full rounded-full border border-[var(--zoya-border-light)] bg-white py-2 pl-9 pr-3 text-sm text-[var(--foreground)] shadow-sm placeholder:text-[var(--zoya-muted)] focus:border-[var(--zoya-gold)] focus:outline-none focus:ring-2 focus:ring-[var(--zoya-gold-bg)]"
+              placeholder="Search conversations..."
+              className="box-border h-10 w-full rounded-[4px] border border-[var(--zoya-rail-search-border)] bg-white py-0 pl-10 pr-3 text-sm text-[var(--foreground)] placeholder:text-[var(--zoya-rail-search-muted)] focus:border-[var(--zoya-gold)] focus:outline-none focus:ring-2 focus:ring-[var(--zoya-gold-bg)]"
             />
           </div>
-        </div>
+        </header>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {filteredConversations.length === 0 ? (
             <div className="p-4 text-center text-[var(--zoya-accent)] text-sm">
               No conversations found
@@ -697,7 +685,7 @@ export default function LeadManagementDashboard({
             <div
               key={conv.id}
               onClick={() => setSelectedConversation(conv)}
-              className="flex gap-2.5 px-3 py-2.5 cursor-pointer transition-colors border-b"
+              className="flex gap-2.5 px-4 py-2.5 cursor-pointer transition-colors border-b"
               style={{
                 borderColor: 'var(--zoya-border-light)',
                 borderLeft: isSelected
@@ -876,10 +864,10 @@ export default function LeadManagementDashboard({
                       }`}
                     >
                       <div
-                        className={`max-w-md px-4 py-3 rounded-[14px] shadow-sm ${
+                        className={`max-w-[min(85%,42rem)] px-4 py-3 ${
                           message.isFromCustomer
                             ? 'zoya-bubble-customer text-[var(--foreground)]'
-                            : 'zoya-bubble-agent text-[var(--foreground)]'
+                            : 'zoya-bubble-agent'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -950,8 +938,11 @@ export default function LeadManagementDashboard({
 
             {/* Reply composer: normal input while AI loads; AI suggestion replaces input when ready */}
             <div
-              className="shrink-0 bg-[#F8F5F2] p-4"
-              style={{ borderTop: '2px solid var(--zoya-gold)' }}
+              className="shrink-0 p-4"
+              style={{
+                background: 'var(--zoya-chat-footer-bg)',
+                borderTop: '2px solid var(--zoya-gold)',
+              }}
             >
               {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
                 <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
@@ -1074,7 +1065,7 @@ export default function LeadManagementDashboard({
                             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                               aiReplyComposerTab === 'edit'
                                 ? 'bg-[#C4B5A5] text-white'
-                                : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                                : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
                             }`}
                           >
                             Edit
@@ -1087,7 +1078,7 @@ export default function LeadManagementDashboard({
                             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                               aiReplyComposerTab === 'preview'
                                 ? 'bg-[#C4B5A5] text-white'
-                                : 'text-[var(--zoya-accent)] hover:bg-[#F8F5F2]'
+                                : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
                             }`}
                           >
                             Preview

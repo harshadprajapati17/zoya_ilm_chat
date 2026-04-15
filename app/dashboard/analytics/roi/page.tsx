@@ -19,8 +19,7 @@ import {
   RadialBar,
   PolarAngleAxis,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Clock, MessageSquare, ArrowLeft, X } from 'lucide-react';
-import Link from 'next/link';
+import { TrendingUp, TrendingDown, Clock, MessageSquare, Info, X } from 'lucide-react';
 
 interface FeedbackDetail {
   id: string;
@@ -49,10 +48,12 @@ interface ROIData {
   };
   acceptanceOverTime: Array<{
     day: number;
+    dateLabel: string;
     rate: number;
   }>;
   editReasonTrends: Array<{
     day: number;
+    dateLabel: string;
     wrongTone: number;
     wrongProduct: number;
     missingDetails: number;
@@ -62,6 +63,7 @@ interface ROIData {
     current: number;
     history: Array<{
       day: number;
+      dateLabel: string;
       score: number;
     }>;
     autoSuggestThreshold: number;
@@ -77,7 +79,7 @@ interface ROIData {
   rawFeedback: Array<FeedbackDetail>;
 }
 
-type TimeRange = 7 | 30 | 90 | 'custom';
+type TimeRange = 7 | 30 | 90;
 
 export default function ROIAnalyticsPage() {
   const [data, setData] = useState<ROIData | null>(null);
@@ -90,6 +92,20 @@ export default function ROIAnalyticsPage() {
     filter?: string;
   } | null>(null);
 
+  const getSelectedDateRangeLabel = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (timeRange - 1));
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
+  };
+
   useEffect(() => {
     fetchROIData();
   }, [timeRange]);
@@ -98,8 +114,7 @@ export default function ROIAnalyticsPage() {
     try {
       setLoading(true);
       setError(null);
-      const days = timeRange === 'custom' ? 90 : timeRange;
-      const response = await fetch(`/api/analytics/roi?days=${days}`);
+      const response = await fetch(`/api/analytics/roi?days=${timeRange}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch ROI data: ${response.status}`);
@@ -118,7 +133,7 @@ export default function ROIAnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto mb-4"></div>
           <div className="text-xl text-gray-700">Loading ROI analytics...</div>
@@ -129,7 +144,7 @@ export default function ROIAnalyticsPage() {
 
   if (error || !data) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center max-w-md">
           <div className="text-xl text-red-600 mb-2">Failed to load ROI analytics</div>
           <div className="text-sm text-gray-600 mb-4">{error || 'No data available'}</div>
@@ -164,7 +179,7 @@ export default function ROIAnalyticsPage() {
     if (!rawFeedback) return;
 
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - (timeRange === 'custom' ? 90 : timeRange) + day - 1);
+    startDate.setDate(startDate.getDate() - timeRange + day - 1);
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 1);
 
@@ -202,76 +217,67 @@ export default function ROIAnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <Link
-            href="/analytics"
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back to Analytics
-          </Link>
-          <div className="flex items-center justify-between mb-4">
+        <div className="mb-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-1">AI Performance & ROI</h1>
-              <p className="text-gray-600 text-sm">Investment impact analysis and trend insights</p>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Performance & ROI</h1>
+              <p className="text-gray-600">Investment impact analysis and trend insights</p>
             </div>
-          </div>
-
-          {/* Time Range Selector */}
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setTimeRange(7)}
-              className={`px-4 py-2 rounded text-sm font-medium transition ${
-                timeRange === 7
-                  ? 'bg-gray-800 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-            >
-              Last 7 Days
-            </button>
-            <button
-              onClick={() => setTimeRange(30)}
-              className={`px-4 py-2 rounded text-sm font-medium transition ${
-                timeRange === 30
-                  ? 'bg-gray-800 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-            >
-              Last 30 Days
-            </button>
-            <button
-              onClick={() => setTimeRange(90)}
-              className={`px-4 py-2 rounded text-sm font-medium transition ${
-                timeRange === 90
-                  ? 'bg-gray-800 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-            >
-              Last 90 Days
-            </button>
-            <button
-              onClick={() => setTimeRange('custom')}
-              className={`px-4 py-2 rounded text-sm font-medium transition ${
-                timeRange === 'custom'
-                  ? 'bg-gray-800 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-              }`}
-            >
-              Custom Range
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-sm text-gray-600 whitespace-nowrap">
+                Date Range: <span className="font-medium text-gray-800">{getSelectedDateRangeLabel()}</span>
+              </div>
+              <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm">
+                <button
+                  onClick={() => setTimeRange(7)}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === 7 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => setTimeRange(30)}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === 30 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 30 Days
+                </button>
+                <button
+                  onClick={() => setTimeRange(90)}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
+                    timeRange === 90 ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 90 Days
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {/* Acceptance Rate Growth */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
-              Acceptance Rate Growth
-            </h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border) flex flex-col">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Acceptance Rate Growth
+              </h3>
+              <div className="relative group">
+                <Info className="h-3.5 w-3.5 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Acceptance Rate Growth</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Percentage of AI-generated responses accepted by agents with minimal or no changes.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-baseline gap-2 mb-2">
               <span className="text-2xl font-bold text-gray-900">
                 {summary.acceptanceRatePrevious}%
@@ -290,10 +296,21 @@ export default function ROIAnalyticsPage() {
           </div>
 
           {/* Edit Rate Decline */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
-              Edit Rate Decline
-            </h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Edit Rate Decline
+              </h3>
+              <div className="relative group">
+                <Info className="h-3.5 w-3.5 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Edit Rate Decline</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Percentage of AI responses that required significant modification by agents before sending.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-baseline gap-2 mb-2">
               <span className="text-2xl font-bold text-gray-900">
                 {summary.editRatePrevious}%
@@ -312,10 +329,21 @@ export default function ROIAnalyticsPage() {
           </div>
 
           {/* Avg Chats per Rep per Day */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
-              Avg Chats per Rep per Day
-            </h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Avg Chats per Rep per Day
+              </h3>
+              <div className="relative group">
+                <Info className="h-3.5 w-3.5 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Avg Chats per Rep per Day</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Average number of customer conversations handled per agent per day.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-baseline gap-2 mb-2">
               <span className="text-2xl font-bold text-gray-900">
                 {summary.chatsPerRepPrevious}
@@ -334,10 +362,21 @@ export default function ROIAnalyticsPage() {
           </div>
 
           {/* Estimated Time Saved */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
-              Estimated Time Saved per Day
-            </h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Estimated Time Saved
+              </h3>
+              <div className="relative group">
+                <Info className="h-3.5 w-3.5 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-72 max-w-[calc(100vw-2rem)] rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Estimated Time Saved</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Approximate reduction in agent effort due to AI-assisted responses.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-baseline gap-2 mb-2">
               <span className="text-2xl font-bold text-gray-900">
                 {summary.timeSavedPerDay.toFixed(1)}
@@ -354,8 +393,19 @@ export default function ROIAnalyticsPage() {
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Acceptance Rate Over Time */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Acceptance Rate Over Time</h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Acceptance Rate Over Time</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Acceptance Rate Over Time</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Trend showing how AI response quality (acceptance) has improved across the selected time period.
+                  </p>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-gray-600 mb-4">Clear upward trajectory with key improvement milestones</p>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={acceptanceOverTime}>
@@ -367,7 +417,7 @@ export default function ROIAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis
-                  dataKey="day"
+                  dataKey="dateLabel"
                   stroke="#9ca3af"
                   style={{ fontSize: '12px' }}
                 />
@@ -408,8 +458,19 @@ export default function ROIAnalyticsPage() {
           </div>
 
           {/* Edit Reason Trends */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Edit Reason Trends</h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Edit Reason Trends</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Edit Reason Trends</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    Breakdown of common types of edits made by agents (e.g., tone, accuracy, completeness).
+                  </p>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-gray-600 mb-4">All categories declining — AI learning across dimensions</p>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={editReasonTrends}>
@@ -433,12 +494,13 @@ export default function ROIAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis
-                  dataKey="day"
+                  dataKey="dateLabel"
                   stroke="#9ca3af"
                   style={{ fontSize: '12px' }}
                 />
                 <YAxis
-                  domain={[0, 40]}
+                  domain={[0, 100]}
+                  allowDataOverflow
                   stroke="#9ca3af"
                   style={{ fontSize: '12px' }}
                   label={{ value: 'Edit Frequency (%)', angle: -90, position: 'insideLeft', style: { fontSize: '12px' } }}
@@ -518,13 +580,24 @@ export default function ROIAnalyticsPage() {
           </div>
 
           {/* Confidence Score Progression */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Confidence Score Progression</h3>
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Confidence Score Progression</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Confidence Score Progression</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    AI&apos;s self-assessed confidence trend in its responses over time.
+                  </p>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-gray-600 mb-4">Journey toward autonomous AI capabilities</p>
 
             {/* Gauge Chart */}
-            <div className="flex items-center justify-center mb-4">
-              <div className="relative" style={{ width: 200, height: 150 }}>
+            <div className="flex items-center justify-center mb-6">
+              <div className="relative w-full max-w-[214px] h-[168px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadialBarChart
                     cx="50%"
@@ -557,11 +630,11 @@ export default function ROIAnalyticsPage() {
             </div>
 
             {/* Line Chart */}
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={214}>
               <LineChart data={confidenceScore.history}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis
-                  dataKey="day"
+                  dataKey="dateLabel"
                   stroke="#9ca3af"
                   style={{ fontSize: '10px' }}
                 />
@@ -605,7 +678,7 @@ export default function ROIAnalyticsPage() {
               </LineChart>
             </ResponsiveContainer>
 
-            <div className="mt-3 space-y-1 text-xs text-gray-600">
+            {/* <div className="mt-3 space-y-1 text-xs text-gray-600">
               <div className="flex items-center gap-2">
                 <span className="inline-block w-8 h-0.5 bg-gray-300 border-dashed"></span>
                 <span>85% Auto-suggest</span>
@@ -618,12 +691,23 @@ export default function ROIAnalyticsPage() {
                 <span className="inline-block w-8 h-0.5 bg-gray-300 border-dashed"></span>
                 <span>98% After-hours</span>
               </div>
-            </div>
+            </div> */}
           </div>
 
-          {/* Edit Frequency by Query Category */}
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Edit Frequency by Query Category</h3>
+          {/* Acceptance Rate by Query Category */}
+          <div className="bg-white rounded-lg p-6 shadow-sm border border-(--zoya-analytics-card-border)">
+            <div className="mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">Acceptance Rate by Query Category</h3>
+              <div className="relative group">
+                <Info className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600" />
+                <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-80 -translate-x-1/2 rounded-md bg-gray-900 p-3 text-left text-white shadow-lg group-hover:block">
+                  <p className="text-xs font-semibold">Acceptance Rate by Query Category</p>
+                  <p className="mt-1 text-xs text-gray-200">
+                    How well AI performs across different types of customer queries (e.g., pricing, product info, availability).
+                  </p>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-gray-600 mb-4">AI excels at product info, needs work on complaints</p>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart

@@ -141,7 +141,24 @@ export async function GET(request: NextRequest) {
       'Needs comparison': 0,
       'Not sure about design': 0,
       'Waiting for occasion': 0,
+      'Other objections': 0,
     };
+
+    const OCCASION_KEYWORDS = [
+      'occasion',
+      'festival',
+      'festive',
+      'wedding later',
+      'next month',
+      'not now',
+      'later',
+      'later on',
+      'after some time',
+      'when needed',
+      'in future',
+      'future purchase',
+      'Waiting for'
+    ];
 
     feedbacks.forEach((f) => {
       if ((f.acceptanceScore ?? 0) < 0.5) {
@@ -152,8 +169,10 @@ export async function GET(request: NextRequest) {
           hesitationCounts['Needs comparison']++;
         } else if (query.includes('design') || query.includes('style')) {
           hesitationCounts['Not sure about design']++;
-        } else {
+        } else if (OCCASION_KEYWORDS.some((keyword) => query.includes(keyword))) {
           hesitationCounts['Waiting for occasion']++;
+        } else {
+          hesitationCounts['Other objections']++;
         }
       }
     });
