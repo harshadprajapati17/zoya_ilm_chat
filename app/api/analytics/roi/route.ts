@@ -112,7 +112,8 @@ export async function GET(request: NextRequest) {
           },
           select: { acceptanceScore: true, createdAt: true },
         }),
-        days
+        days,
+        startDate
       );
 
       if (tempAcceptanceChart.length > 0) {
