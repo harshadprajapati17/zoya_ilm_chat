@@ -12,6 +12,24 @@ const CRAWLER_PATTERNS = [
   "httpclient",
 ];
 
+const PREVIEW_BOT_ALLOWLIST = [
+  "whatsapp",
+  "facebookexternalhit",
+  "facebot",
+  "twitterbot",
+  "linkedinbot",
+  "slackbot",
+  "discordbot",
+  "telegrambot",
+];
+
+function isPreviewBot(userAgent: string): boolean {
+  const normalizedUserAgent = userAgent.toLowerCase();
+  return PREVIEW_BOT_ALLOWLIST.some((bot) =>
+    normalizedUserAgent.includes(bot)
+  );
+}
+
 function isCrawlerUserAgent(userAgent: string): boolean {
   const normalizedUserAgent = userAgent.toLowerCase();
   return CRAWLER_PATTERNS.some((pattern) =>
@@ -22,7 +40,7 @@ function isCrawlerUserAgent(userAgent: string): boolean {
 export function middleware(request: NextRequest) {
   const userAgent = request.headers.get("user-agent") ?? "";
 
-  if (isCrawlerUserAgent(userAgent)) {
+  if (!isPreviewBot(userAgent) && isCrawlerUserAgent(userAgent)) {
     return new NextResponse("Crawler access is blocked.", { status: 403 });
   }
 
