@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, EditCategory } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -259,7 +259,7 @@ async function main() {
         const editPercentage = Math.random() * 0.40 + 0.15;
         const similarityScore = 1 - editPercentage;
 
-        const editCategories = ['TONE_ADJUSTMENT', 'MINOR_EDIT', 'ACCURACY_ISSUE', 'LENGTH_PROBLEM'];
+        const editCategories: EditCategory[] = ['TONE_ADJUSTMENT', 'MINOR_EDIT', 'ACCURACY_ISSUE', 'LENGTH_PROBLEM'];
         const editCategory = editCategories[Math.floor(Math.random() * editCategories.length)];
 
         await prisma.aIEditFeedback.create({
@@ -370,7 +370,7 @@ async function main() {
       const editPercentage = Math.random() * 0.30 + 0.10; // Smaller edits
       const similarityScore = 1 - editPercentage;
 
-      const editCategories = ['TONE_ADJUSTMENT', 'MINOR_EDIT', 'ACCURACY_ISSUE', 'LENGTH_PROBLEM'];
+      const editCategories: EditCategory[] = ['TONE_ADJUSTMENT', 'MINOR_EDIT', 'ACCURACY_ISSUE', 'LENGTH_PROBLEM'];
       const editCategory = editCategories[Math.floor(Math.random() * editCategories.length)];
 
       await prisma.aIEditFeedback.create({

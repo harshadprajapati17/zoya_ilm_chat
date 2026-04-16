@@ -264,7 +264,7 @@ async function main() {
         else if (editCategory === 'PRODUCT_CORRECTION') improvementNeeded.push('Product Knowledge', 'Accuracy');
         else if (editCategory === 'ACCURACY_ISSUE') improvementNeeded.push('Accuracy', 'Detail');
         else if (editCategory === 'LENGTH_PROBLEM') improvementNeeded.push('Completeness', 'Detail');
-        else if (editCategory === 'LANGUAGE_QUALITY') improvementNeeded.push('Grammar', 'Clarity');
+        else if (editCategory === 'MINOR_EDIT') improvementNeeded.push('Grammar', 'Clarity');
 
         await prisma.aIEditFeedback.create({
           data: {
