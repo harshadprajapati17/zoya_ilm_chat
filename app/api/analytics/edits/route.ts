@@ -54,14 +54,17 @@ export async function GET(request: NextRequest) {
     // Get total count
     const total = await prisma.aIEditFeedback.count({ where });
 
-    // Get paginated records - ordered by oldest first to show AI learning progression
+    // Get paginated records - ordered to show best quality examples first for demo
+    // This prioritizes high acceptance scores (good AI responses) with diverse categories
     const edits = await prisma.aIEditFeedback.findMany({
       where,
       skip,
       take: limit,
-      orderBy: {
-        createdAt: 'asc', // Oldest first - January → February → March
-      },
+      orderBy: [
+        { acceptanceScore: 'desc' }, // High quality AI responses first
+        { editPercentage: 'asc' },   // Smaller edits (closer to manager's version)
+        { createdAt: 'desc' },        // Recent examples
+      ],
       select: {
         id: true,
         originalSuggestion: true,
