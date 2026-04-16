@@ -144,10 +144,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               </span>
               {!sidebarCollapsed ? (
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[11px] font-semibold leading-tight text-[var(--foreground)]">
+                  <span className="truncate text-[12px] font-semibold leading-tight text-[var(--foreground)] tracking-tighter">
                     Zoya Concierge
                   </span>
-                  <span className="truncate text-[10px] font-normal leading-tight text-[var(--zoya-muted)]">
+                  <span className="truncate text-[11px] font-normal leading-tight text-[var(--zoya-muted)]">
                     Internal Platform
                   </span>
                 </span>
