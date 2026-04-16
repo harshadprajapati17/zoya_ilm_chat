@@ -25,6 +25,16 @@
 *.pem
 *.md
 
+# IDE
+.idea/
+
+# Database backups
+*.dump
+*.sql
+restore_database*.sh
+database_backup*.dump
+database_backup*.sql
+
 # debug
 npm-debug.log*
 yarn-debug.log*
