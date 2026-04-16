@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnalyticsContentSkeleton } from '@/components/dashboard/AnalyticsContentSkeleton';
 import { ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import { format, parseISO } from 'date-fns';
@@ -195,17 +196,6 @@ export default function EditsDetailPage() {
     return 'text-red-600';
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <div className="text-xl text-gray-700">Loading edits...</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen p-8">
       {toast && (
@@ -226,11 +216,7 @@ export default function EditsDetailPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Journey</h1>
             <p className="text-gray-600 max-w-4xl">
               See how AI improved over 90 days by learning from manager corrections.
-              <span className="block text-sm mt-1">
-                <strong>January:</strong> Poor AI responses, heavy manager corrections →
-                <strong> February:</strong> Improving →
-                <strong> March:</strong> AI mastered, minimal edits needed
-              </span>
+      
             </p>
           </div>
 
@@ -241,7 +227,9 @@ export default function EditsDetailPage() {
                 <div className="w-full sm:w-36 lg:w-auto">
                   <p className="mt-5 flex h-7.5 items-center px-1 text-xs text-gray-700 sm:mt-0">
                     <span className="font-medium">Total Edits:</span>
-                    <span className="ml-1 font-semibold text-gray-800">{totalCount.toLocaleString()}</span>
+                    <span className="ml-1 font-semibold text-gray-800">
+                      {loading ? '—' : totalCount.toLocaleString()}
+                    </span>
                   </p>
                 </div>
 
@@ -253,11 +241,12 @@ export default function EditsDetailPage() {
                     </label>
                     <select
                       value={categoryFilter}
+                      disabled={loading}
                       onChange={(e) => {
                         setCategoryFilter(e.target.value);
                         setCurrentPage(1);
                       }}
-                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value="all">All Categories</option>
                       <option value="TONE_ADJUSTMENT">Tone Adjustment</option>
@@ -278,9 +267,10 @@ export default function EditsDetailPage() {
                     </label>
                     <button
                       type="button"
+                      disabled={loading}
                       onClick={handleDateRangeClick}
                       ref={datePickerTriggerRef}
-                      className="flex h-7.5 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-2 text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex h-7.5 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-2 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <span className="truncate text-xs text-gray-700">
                         {startDate && endDate
@@ -302,11 +292,12 @@ export default function EditsDetailPage() {
                     </label>
                     <select
                       value={pageSize}
+                      disabled={loading}
                       onChange={(e) => {
                         setPageSize(Number(e.target.value));
                         setCurrentPage(1);
                       }}
-                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-7.5 w-full rounded-md border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value={10}>10</option>
                       <option value={20}>20</option>
@@ -394,6 +385,10 @@ export default function EditsDetailPage() {
         </div>
 
         {/* Edits List */}
+        {loading ? (
+          <AnalyticsContentSkeleton variant="edits" />
+        ) : (
+          <>
         <div className="space-y-6">
           {edits.map((edit) => (
             <div key={edit.id} className="overflow-hidden rounded-lg border border-(--zoya-analytics-card-border) bg-white shadow-sm transition hover:shadow">
@@ -563,7 +558,7 @@ export default function EditsDetailPage() {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {totalPages > 1 && !loading && (
           <div className="mt-8 flex items-center justify-between bg-white p-4 rounded-lg shadow border border-(--zoya-analytics-card-border)">
             <div className="text-sm text-gray-700">
               Page {currentPage} of {totalPages}
@@ -637,6 +632,8 @@ export default function EditsDetailPage() {
               Total: {totalCount} edits
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

@@ -86,6 +86,7 @@ export default function LeadManagementDashboard({
   managerName,
 }: LeadManagementDashboardProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsInitialLoading, setConversationsInitialLoading] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -249,6 +250,8 @@ export default function LeadManagementDashboard({
       setConversations(data.conversations);
     } catch (error) {
       console.error('Error fetching conversations:', error);
+    } finally {
+      setConversationsInitialLoading(false);
     }
   };
 
@@ -631,19 +634,27 @@ export default function LeadManagementDashboard({
             borderColor: 'var(--zoya-border-light)',
           }}
         >
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="zoya-heading text-xl font-semibold leading-tight tracking-tight text-[var(--foreground)]">
               Conversations
             </h2>
-            <span
-              className="shrink-0 tabular-nums rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-              style={{
-                background: 'var(--zoya-gold-bg)',
-                color: 'var(--zoya-gold)',
-              }}
-            >
-              {conversations.length} active
-            </span>
+            {conversationsInitialLoading ? (
+              <span
+                className="inline-block h-[22px] w-14 shrink-0 animate-pulse rounded-full"
+                style={{ background: 'var(--zoya-bg-soft)' }}
+                aria-hidden
+              />
+            ) : (
+              <span
+                className="shrink-0 tabular-nums rounded-full px-2.5 py-0.5 text-[11px] font-medium leading-none"
+                style={{
+                  background: 'var(--zoya-gold-bg)',
+                  color: 'var(--zoya-gold)',
+                }}
+              >
+                {conversations.length} active
+              </span>
+            )}
           </div>
           <label htmlFor="conv-sidebar-search" className="sr-only">
             Search conversations
@@ -666,7 +677,42 @@ export default function LeadManagementDashboard({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          {filteredConversations.length === 0 ? (
+          {conversationsInitialLoading ? (
+            <ul className="list-none p-0 m-0" aria-busy="true" aria-label="Loading conversations">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <li
+                  key={i}
+                  className="flex gap-2.5 border-b px-4 py-2.5"
+                  style={{ borderColor: 'var(--zoya-border-light)' }}
+                >
+                  <div
+                    className="h-9 w-9 shrink-0 animate-pulse rounded-full"
+                    style={{ background: 'var(--zoya-bg-soft)' }}
+                  />
+                  <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="h-3.5 max-w-[58%] flex-1 animate-pulse rounded"
+                        style={{ background: 'var(--zoya-bg-soft)' }}
+                      />
+                      <div
+                        className="h-2.5 w-10 shrink-0 animate-pulse rounded"
+                        style={{ background: 'var(--zoya-bg-soft)' }}
+                      />
+                    </div>
+                    <div
+                      className="h-3 w-full max-w-[85%] animate-pulse rounded"
+                      style={{ background: 'var(--zoya-bg-soft)' }}
+                    />
+                    <div
+                      className="h-2.5 w-10 animate-pulse rounded"
+                      style={{ background: 'var(--zoya-bg-soft)' }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : filteredConversations.length === 0 ? (
             <div className="p-4 text-center text-[var(--zoya-accent)] text-sm">
               No conversations found
             </div>

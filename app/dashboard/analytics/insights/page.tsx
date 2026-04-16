@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnalyticsContentSkeleton } from '@/components/dashboard/AnalyticsContentSkeleton';
 import { TrendingUp, TrendingDown, Users, Info, X, MapPin, Pencil } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { DayPicker, type DateRange } from 'react-day-picker';
@@ -267,30 +268,7 @@ export default function CustomerInsightsPage() {
     setModalData(null);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600 mx-auto mb-4"></div>
-          <div className="text-xl text-gray-700">Loading insights...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  const highestDemandRange = data.priceSensitivity.reduce<{ range: string; volume: number } | null>(
-    (currentHighest, item) => {
-      if (!currentHighest || item.volume > currentHighest.volume) {
-        return { range: item.range, volume: item.volume };
-      }
-      return currentHighest;
-    },
-    null
-  );
-
-  const selectedPresetLabel = (() => {
+  const selectedPresetLabel = useMemo(() => {
     if (timeRange === 'custom') return null;
     const selectedDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
     const endDate = new Date();
@@ -302,114 +280,26 @@ export default function CustomerInsightsPage() {
       year: 'numeric',
     });
     return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
-  })();
+  }, [timeRange]);
 
-  return (
-    <div className="min-h-screen p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Customer Insights</h1>
-              <p className="text-gray-600">Deep dive into customer behavior and preferences</p>
-            </div>
-            <div className="flex flex-col items-start gap-2">
-              <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm">
-                <button
-                  onClick={() => setTimeRange('7d')}
-                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === '7d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
-                  }`}
-                >
-                  Last 7 Days
-                </button>
-                <button
-                  onClick={() => setTimeRange('30d')}
-                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === '30d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
-                  }`}
-                >
-                  Last 30 Days
-                </button>
-                <button
-                  onClick={() => setTimeRange('90d')}
-                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === '90d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
-                  }`}
-                >
-                  Last 90 Days
-                </button>
-                <button
-                  onClick={handleCustomRangeClick}
-                  ref={customPickerTriggerRef}
-                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition ${
-                    timeRange === 'custom' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
-                  }`}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    {timeRange === 'custom' && customStartDate && customEndDate
-                      ? `${format(parseISO(customStartDate), 'MMM d, yyyy')} - ${format(parseISO(customEndDate), 'MMM d, yyyy')}`
-                      : 'Custom Range'}
-                    {timeRange === 'custom' && customStartDate && customEndDate ? <Pencil className="h-3 w-3" /> : null}
-                  </span>
-                </button>
-              </div>
-              {selectedPresetLabel ? (
-                <div className="text-xs text-gray-500 whitespace-nowrap">
-                  Date Range: <span className="font-normal text-gray-500">{selectedPresetLabel}</span>
-                </div>
-              ) : null}
-              {isCustomPickerOpen && createPortal(
-                <div
-                  ref={customPickerRef}
-                  className="fixed z-9999 rounded-lg border border-stone-200 bg-white p-3 shadow-xl"
-                  style={{ top: customPickerPosition.top, left: customPickerPosition.left, transform: 'translateX(-100%)' }}
-                >
-                  <DayPicker
-                    mode="range"
-                    selected={pendingRange}
-                    onSelect={handleRangeSelect}
-                    min={1}
-                    disabled={{ after: new Date() }}
-                    captionLayout="dropdown"
-                    fromYear={2020}
-                    toYear={new Date().getFullYear()}
-                    numberOfMonths={2}
-                    pagedNavigation
-                    className="text-sm"
-                    classNames={{
-                      months: 'flex flex-row gap-6',
-                    }}
-                  />
-                  <div className="mt-3 border-t border-stone-200 pt-3">
-                    <p className="text-xs text-stone-600">
-                      Selected:{' '}
-                      <span className="font-medium text-stone-800">
-                        {pendingRange?.from
-                          ? pendingRange?.to
-                            ? `${format(pendingRange.from, 'MMM d, yyyy')} - ${format(pendingRange.to, 'MMM d, yyyy')}`
-                            : `${format(pendingRange.from, 'MMM d, yyyy')} - Select end date`
-                          : 'Select start and end dates'}
-                      </span>
-                    </p>
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        onClick={handleApplyCustomRange}
-                        disabled={!pendingRange?.from || !pendingRange?.to}
-                        className="rounded-md bg-stone-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                </div>,
-                document.body
-              )}
-            </div>
-          </div>
-        </div>
+  const renderMain = () => {
+    if (loading) {
+      return <AnalyticsContentSkeleton variant="insights" />;
+    }
+    if (!data) return null;
 
+    const highestDemandRange = data.priceSensitivity.reduce<{ range: string; volume: number } | null>(
+      (currentHighest, item) => {
+        if (!currentHighest || item.volume > currentHighest.volume) {
+          return { range: item.range, volume: item.volume };
+        }
+        return currentHighest;
+      },
+      null
+    );
+
+    return (
+      <>
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <MetricCard
@@ -790,6 +680,128 @@ export default function CustomerInsightsPage() {
             </div>
           </div>
         )}
+      </>
+    );
+  };
+
+  return (
+    <div className="min-h-screen p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="mb-2 text-3xl font-bold text-gray-900">Customer Insights</h1>
+              <p className="text-gray-600">Deep dive into customer behavior and preferences</p>
+            </div>
+            <div className="flex flex-col items-start gap-2">
+              <div
+                className={`inline-flex items-center rounded-lg border border-stone-300 bg-white p-0.5 shadow-sm ${
+                  loading ? 'pointer-events-none opacity-50' : ''
+                }`}
+              >
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setTimeRange('7d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed ${
+                    timeRange === '7d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setTimeRange('30d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed ${
+                    timeRange === '30d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 30 Days
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setTimeRange('90d')}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed ${
+                    timeRange === '90d' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  Last 90 Days
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleCustomRangeClick}
+                  ref={customPickerTriggerRef}
+                  className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed ${
+                    timeRange === 'custom' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {timeRange === 'custom' && customStartDate && customEndDate
+                      ? `${format(parseISO(customStartDate), 'MMM d, yyyy')} - ${format(parseISO(customEndDate), 'MMM d, yyyy')}`
+                      : 'Custom Range'}
+                    {timeRange === 'custom' && customStartDate && customEndDate ? <Pencil className="h-3 w-3" /> : null}
+                  </span>
+                </button>
+              </div>
+              {selectedPresetLabel ? (
+                <div className="whitespace-nowrap text-xs text-gray-500">
+                  Date Range: <span className="font-normal text-gray-500">{selectedPresetLabel}</span>
+                </div>
+              ) : null}
+              {isCustomPickerOpen && createPortal(
+                <div
+                  ref={customPickerRef}
+                  className="fixed z-9999 rounded-lg border border-stone-200 bg-white p-3 shadow-xl"
+                  style={{ top: customPickerPosition.top, left: customPickerPosition.left, transform: 'translateX(-100%)' }}
+                >
+                  <DayPicker
+                    mode="range"
+                    selected={pendingRange}
+                    onSelect={handleRangeSelect}
+                    min={1}
+                    disabled={{ after: new Date() }}
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear()}
+                    numberOfMonths={2}
+                    pagedNavigation
+                    className="text-sm"
+                    classNames={{
+                      months: 'flex flex-row gap-6',
+                    }}
+                  />
+                  <div className="mt-3 border-t border-stone-200 pt-3">
+                    <p className="text-xs text-stone-600">
+                      Selected:{' '}
+                      <span className="font-medium text-stone-800">
+                        {pendingRange?.from
+                          ? pendingRange?.to
+                            ? `${format(pendingRange.from, 'MMM d, yyyy')} - ${format(pendingRange.to, 'MMM d, yyyy')}`
+                            : `${format(pendingRange.from, 'MMM d, yyyy')} - Select end date`
+                          : 'Select start and end dates'}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleApplyCustomRange}
+                        disabled={!pendingRange?.from || !pendingRange?.to}
+                        className="rounded-md bg-stone-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-300"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+            </div>
+          </div>
+        </div>
+        {renderMain()}
       </div>
     </div>
   );
