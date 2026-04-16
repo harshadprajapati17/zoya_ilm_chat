@@ -61,6 +61,11 @@ export async function generateReplySuggestion(
 
     const lowerMessage = customerMessage.toLowerCase();
 
+    // Detect greetings and casual conversation that should be handled by LLM
+    const isGreeting = /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|how's it going|what's up|greetings|howdy)/i.test(lowerMessage.trim())
+      || /^(how are you|how do you do|nice to meet you|pleasure to meet you|thanks|thank you|bye|goodbye)/i.test(lowerMessage.trim())
+      || /^(tell me about yourself|who are you|what do you do)/i.test(lowerMessage.trim());
+
     // Extract context from conversation history (product names, categories mentioned)
     const conversationContext = conversationHistory.map(msg => msg.content).join(' ');
 
@@ -382,8 +387,8 @@ ${storeList}`;
 
     // Step 3: Handle empty search results with hard-coded responses (prevents hallucination)
     // If user asked for products but we found none, return a helpful message WITHOUT calling LLM
-    // EXCEPTION: If they're asking about a specific product reference OR general browsing, let LLM handle it
-    if (!isStoreQuery && products.length === 0 && productAvailability.length === 0 && !contextualProductName && !isBrowsingQuery) {
+    // EXCEPTION: If they're asking about a specific product reference, general browsing, OR just greeting, let LLM handle it
+    if (!isStoreQuery && products.length === 0 && productAvailability.length === 0 && !contextualProductName && !isBrowsingQuery && !isGreeting) {
       // User wanted specific products but none found
       let noProductMessage = "I'd love to help you find the perfect piece! ";
 
