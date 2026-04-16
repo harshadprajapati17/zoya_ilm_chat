@@ -122,6 +122,12 @@ export default function LeadManagementDashboard({
   const inputMessageRef = useRef('');
   /** Ignore AI fetch results if the user switched conversations before the request finished. */
   const activeConversationIdRef = useRef<string | null>(null);
+  /** Abort stale polling message requests when conversation changes or a newer poll starts. */
+  const messagesAbortControllerRef = useRef<AbortController | null>(null);
+  /** Abort stale AI suggestion requests when conversation changes or a newer request starts. */
+  const suggestionAbortControllerRef = useRef<AbortController | null>(null);
+  /** Debounce auto-suggestion so rapid state changes don't trigger extra calls. */
+  const suggestionDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     inputMessageRef.current = inputMessage;
@@ -168,6 +174,12 @@ export default function LeadManagementDashboard({
   useEffect(() => {
     const id = selectedConversation?.id ?? null;
     activeConversationIdRef.current = id;
+    messagesAbortControllerRef.current?.abort();
+    suggestionAbortControllerRef.current?.abort();
+    if (suggestionDebounceTimeoutRef.current) {
+      clearTimeout(suggestionDebounceTimeoutRef.current);
+      suggestionDebounceTimeoutRef.current = null;
+    }
 
     setInputMessage('');
     setAiSuggestion(null);
@@ -238,9 +250,20 @@ export default function LeadManagementDashboard({
       !aiSuggestion &&
       !isLoadingSuggestion
     ) {
-      setLastSuggestedMessageId(lastMessage.id);
-      getAISuggestion();
+      if (suggestionDebounceTimeoutRef.current) {
+        clearTimeout(suggestionDebounceTimeoutRef.current);
+      }
+      suggestionDebounceTimeoutRef.current = setTimeout(() => {
+        setLastSuggestedMessageId(lastMessage.id);
+        getAISuggestion();
+      }, 250);
     }
+    return () => {
+      if (suggestionDebounceTimeoutRef.current) {
+        clearTimeout(suggestionDebounceTimeoutRef.current);
+        suggestionDebounceTimeoutRef.current = null;
+      }
+    };
   }, [messages, lastSuggestedMessageId, aiSuggestion, isLoadingSuggestion]);
 
   const fetchConversations = async () => {
@@ -256,11 +279,19 @@ export default function LeadManagementDashboard({
   };
 
   const fetchMessages = async (conversationId: string) => {
+    messagesAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    messagesAbortControllerRef.current = controller;
+
     try {
-      const response = await fetch(`/api/chat?conversationId=${conversationId}`);
+      const response = await fetch(`/api/chat?conversationId=${conversationId}`, {
+        signal: controller.signal,
+      });
       const data = await response.json();
+      if (activeConversationIdRef.current !== conversationId) return;
       setMessages(data.messages);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching messages:', error);
     }
   };
@@ -269,6 +300,9 @@ export default function LeadManagementDashboard({
     if (!selectedConversation) return;
 
     const conversationId = selectedConversation.id;
+    suggestionAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    suggestionAbortControllerRef.current = controller;
     setIsLoadingSuggestion(true);
     try {
       const lastCustomerMessage = messages
@@ -287,6 +321,7 @@ export default function LeadManagementDashboard({
       const response = await fetch('/api/ai/suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           messageId: lastCustomerMessage.id, // Pass messageId to save suggestion to database
           customerMessage: lastCustomerMessage.content,
@@ -299,6 +334,7 @@ export default function LeadManagementDashboard({
       if (activeConversationIdRef.current !== conversationId) return;
       setAiSuggestion(data);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error getting AI suggestion:', error);
     } finally {
       if (activeConversationIdRef.current === conversationId) {
