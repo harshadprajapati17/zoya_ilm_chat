@@ -1,9 +1,5 @@
-import OpenAI from 'openai';
 import { EditCategory } from '@prisma/client';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { generateChatCompletion, generateEmbedding } from './llm';
 
 export interface EditAnalysisResult {
   editCategory: EditCategory;
@@ -91,7 +87,7 @@ function analyzeProductChanges(original: string, edited: string) {
 }
 
 /**
- * Use OpenAI to perform deep sentiment and tone analysis
+ * Use configured LLM to perform deep sentiment and tone analysis
  */
 async function performDeepAnalysis(
   original: string,
@@ -135,14 +131,15 @@ Analyze the differences and provide a detailed JSON response with the following 
 Be specific and actionable in your analysis.`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    });
+    const rawResponse = await generateChatCompletion(
+      [{ role: 'user', content: `${prompt}\n\nReturn valid JSON only. No markdown fences.` }],
+      {
+        temperature: 0.3,
+        maxTokens: 1200,
+      }
+    );
 
-    const analysis = JSON.parse(response.choices[0].message.content || '{}');
+    const analysis = JSON.parse(rawResponse || '{}');
 
     return {
       toneShift: analysis.toneShift || null,
@@ -236,19 +233,17 @@ function determineEditCategory(
 }
 
 /**
- * Calculate semantic similarity using OpenAI embeddings
+ * Calculate semantic similarity using configured provider embeddings
  */
 async function calculateSemanticSimilarity(
   text1: string,
   text2: string
 ): Promise<number> {
   try {
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: [text1, text2],
-    });
-
-    const [embedding1, embedding2] = response.data.map(d => d.embedding);
+    const [embedding1, embedding2] = await Promise.all([
+      generateEmbedding(text1),
+      generateEmbedding(text2),
+    ]);
 
     // Calculate cosine similarity
     let dotProduct = 0;
@@ -324,7 +319,7 @@ export async function storeEditFeedback(
   editedContent: string,
   editedBy: string,
   customerQuery: string,
-  conversationContext: any
+  conversationContext: unknown
 ) {
   const { prisma } = await import('../prisma');
 

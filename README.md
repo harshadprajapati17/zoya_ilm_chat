@@ -141,7 +141,7 @@ zoya_ilm/
 ├── lib/
 │   ├── prisma.ts                 # Prisma client
 │   └── services/
-│       ├── openai.ts             # OpenAI integration
+│       ├── llm.ts                # Configurable LLM integration
 │       ├── translation.ts        # Translation service
 │       ├── productSearch.ts      # Vector search
 │       └── aiSuggestions.ts      # AI reply generation
@@ -235,7 +235,7 @@ export const SUPPORTED_LANGUAGES = {
 
 ### Changing AI Model
 
-Edit `lib/services/openai.ts`:
+Edit `lib/services/llm.ts`:
 
 ```typescript
 const response = await openai.chat.completions.create({

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Loader2 } from 'lucide-react';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import MessageContent from './MessageContent';
 
 interface Message {
@@ -11,6 +12,7 @@ interface Message {
   isFromCustomer: boolean;
   createdAt: string;
   sessionId?: string | null;
+  deliveryStatus?: 'pending' | 'failed';
   sender: {
     id: string;
     name: string;
@@ -22,6 +24,8 @@ interface CustomerChatProps {
   customerLanguage?: string;
 }
 
+const supabaseClient = getSupabaseBrowserClient();
+
 export default function CustomerChat({
   customerLanguage = 'en',
 }: CustomerChatProps) {
@@ -31,7 +35,6 @@ export default function CustomerChat({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [showPreChatForm, setShowPreChatForm] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
@@ -40,6 +43,25 @@ export default function CustomerChat({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
+
+  const fetchMessages = useCallback(async () => {
+    if (!conversationId) return;
+
+    try {
+      const response = await fetch(`/api/chat?conversationId=${conversationId}`, {
+        cache: 'no-store',
+      });
+      const data = await response.json();
+      setMessages((prev) => {
+        const localPendingOrFailed = prev.filter(
+          (msg) => msg.id.startsWith('temp-') && msg.isFromCustomer
+        );
+        return [...data.messages, ...localPendingOrFailed];
+      });
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+    }
+  }, [conversationId]);
 
   // Scroll only the messages pane — avoid scrollIntoView (it scrolls the document on
   // mobile and fights the keyboard, making the input feel inactive).
@@ -59,16 +81,45 @@ export default function CustomerChat({
     prevMessageCountRef.current = messages.length;
   }, [messages]);
 
-  // Poll for new messages every 3 seconds
+  // Load initial messages and subscribe to realtime inserts for this conversation.
   useEffect(() => {
     if (!conversationId) return;
 
-    const interval = setInterval(() => {
-      fetchMessages();
-    }, 3000);
+    void fetchMessages();
 
-    return () => clearInterval(interval);
-  }, [conversationId]);
+    if (!supabaseClient) {
+      console.warn(
+        'Supabase realtime is disabled. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+      );
+      return;
+    }
+
+    const channel = supabaseClient
+      .channel(`chat-messages-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Message',
+        },
+        (payload) => {
+          const nextConversationId =
+            typeof payload.new === 'object' && payload.new && 'conversationId' in payload.new
+              ? String(payload.new.conversationId)
+              : null;
+
+          if (nextConversationId === conversationId) {
+            void fetchMessages();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabaseClient.removeChannel(channel);
+    };
+  }, [conversationId, fetchMessages]);
 
   const initializeConversation = async () => {
     setIsLoading(true);
@@ -116,26 +167,29 @@ export default function CustomerChat({
     initializeConversation();
   };
 
-  const fetchMessages = async () => {
-    if (!conversationId) return;
-
-    try {
-      const response = await fetch(`/api/chat?conversationId=${conversationId}`);
-      const data = await response.json();
-      setMessages(data.messages);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    }
-  };
-
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !conversationId || !customerId || isSending) return;
+    if (!inputMessage.trim() || !conversationId || !customerId) return;
 
-    setIsSending(true);
     const messageContent = inputMessage;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setInputMessage('');
     shouldAutoScrollRef.current = true; // Force scroll when user sends message
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: messageContent,
+      translatedContent: null,
+      isFromCustomer: true,
+      createdAt: new Date().toISOString(),
+      sessionId,
+      deliveryStatus: 'pending',
+      sender: {
+        id: customerId,
+        name: formData.name || 'You',
+        role: 'CUSTOMER',
+      },
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
       const response = await fetch('/api/chat', {
@@ -146,17 +200,23 @@ export default function CustomerChat({
           senderId: customerId,
           content: messageContent,
           isFromCustomer: true,
-          targetLanguage: 'en', // Translate to English for managers
         }),
       });
 
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
       const data = await response.json();
-      setMessages((prev) => [...prev, data.message]);
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === tempId ? data.message : msg))
+      );
     } catch (error) {
       console.error('Error sending message:', error);
-      setInputMessage(messageContent);
-    } finally {
-      setIsSending(false);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId ? { ...msg, deliveryStatus: 'failed' } : msg
+        )
+      );
     }
   };
 
@@ -305,6 +365,16 @@ export default function CustomerChat({
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
+                {message.deliveryStatus === 'pending' && (
+                  <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+                  </span>
+                )}
+                {message.deliveryStatus === 'failed' && (
+                  <span className="ml-2 text-red-500">Failed to send</span>
+                )}
               </p>
             </div>
           </div>
@@ -320,18 +390,13 @@ export default function CustomerChat({
             onChange={(e) => setInputMessage(e.target.value)}
             placeholder="Type your message..."
             className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-transparent"
-            disabled={isSending}
           />
           <button
             type="submit"
-            disabled={!inputMessage.trim() || isSending}
+            disabled={!inputMessage.trim()}
             className="bg-stone-600 text-white px-6 py-3 rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 shadow-sm"
           >
-            {isSending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Send className="w-5 h-5" />
-            )}
+            <Send className="w-5 h-5" />
           </button>
         </form>
         <p className="text-xs text-gray-500 mt-2 text-center">

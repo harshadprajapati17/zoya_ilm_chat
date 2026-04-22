@@ -1,4 +1,4 @@
-import { generateChatCompletion } from './openai';
+import { generateChatCompletion } from './llm';
 import { searchProducts, Product } from './productSearch';
 import { searchStores, getProductAvailability, getStoresByCity, Store } from './storeSearch';
 import { getEnhancedPromptInstructions, getSimilarPastEdits } from './aiFeedbackLearning';

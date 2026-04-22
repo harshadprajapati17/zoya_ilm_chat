@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
   MessageSquare,
   Send,
@@ -69,6 +70,8 @@ interface LeadManagementDashboardProps {
   managerId: string;
   managerName: string;
 }
+
+const supabaseClient = getSupabaseBrowserClient();
 
 // TODO: Re-enable "edit reason" feedback UI in a future iteration.
 /*
@@ -220,15 +223,88 @@ export default function LeadManagementDashboard({
 
   useEffect(() => {
     fetchConversations();
-    const interval = setInterval(fetchConversations, 5000);
-    return () => clearInterval(interval);
+
+    if (!supabaseClient) {
+      console.warn(
+        'Supabase realtime is disabled. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+      );
+      return;
+    }
+
+    const channel = supabaseClient
+      .channel('conversations-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'Message' },
+        () => {
+          void fetchConversations();
+          const activeConversationId = activeConversationIdRef.current;
+          if (activeConversationId) {
+            void fetchMessages(activeConversationId);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'Conversation' },
+        () => {
+          void fetchConversations();
+          const activeConversationId = activeConversationIdRef.current;
+          if (activeConversationId) {
+            void fetchMessages(activeConversationId);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabaseClient.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
     if (selectedConversation) {
       fetchMessages(selectedConversation.id);
-      const interval = setInterval(() => fetchMessages(selectedConversation.id), 3000);
-      return () => clearInterval(interval);
+
+      if (!supabaseClient) return;
+
+      const channel = supabaseClient
+        .channel(`conversation-messages-${selectedConversation.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'Message',
+          },
+          (payload) => {
+            const nextConversationId =
+              typeof payload.new === 'object' && payload.new && 'conversationId' in payload.new
+                ? String(payload.new.conversationId)
+                : typeof payload.new === 'object' &&
+                    payload.new &&
+                    'conversation_id' in payload.new
+                  ? String(payload.new.conversation_id)
+                : typeof payload.old === 'object' &&
+                    payload.old &&
+                    'conversationId' in payload.old
+                  ? String(payload.old.conversationId)
+                  : typeof payload.old === 'object' &&
+                      payload.old &&
+                      'conversation_id' in payload.old
+                    ? String(payload.old.conversation_id)
+                  : null;
+
+            if (nextConversationId === selectedConversation.id) {
+              void fetchMessages(selectedConversation.id);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        void supabaseClient.removeChannel(channel);
+      };
     }
   }, [selectedConversation]);
 
@@ -241,15 +317,16 @@ export default function LeadManagementDashboard({
     // Only trigger AI suggestion if:
     // 1. Last message is from customer
     // 2. We haven't already generated suggestion for this message
-    // 3. There's no existing AI suggestion (or it was cleared after sending)
-    // 4. Not currently loading a suggestion
+    // 3. Not currently loading a suggestion
     if (
       lastMessage &&
       lastMessage.isFromCustomer &&
       lastMessage.id !== lastSuggestedMessageId &&
-      !aiSuggestion &&
       !isLoadingSuggestion
     ) {
+      // Replace stale suggestion as soon as a newer customer message arrives.
+      setAiSuggestion(null);
+      setUsedAISuggestion(null);
       if (suggestionDebounceTimeoutRef.current) {
         clearTimeout(suggestionDebounceTimeoutRef.current);
       }
@@ -264,11 +341,13 @@ export default function LeadManagementDashboard({
         suggestionDebounceTimeoutRef.current = null;
       }
     };
-  }, [messages, lastSuggestedMessageId, aiSuggestion, isLoadingSuggestion]);
+  }, [messages, lastSuggestedMessageId, isLoadingSuggestion]);
 
   const fetchConversations = async () => {
     try {
-      const response = await fetch('/api/conversations?status=active');
+      const response = await fetch('/api/conversations?status=active', {
+        cache: 'no-store',
+      });
       const data = await response.json();
       setConversations(data.conversations);
     } catch (error) {
@@ -286,6 +365,7 @@ export default function LeadManagementDashboard({
     try {
       const response = await fetch(`/api/chat?conversationId=${conversationId}`, {
         signal: controller.signal,
+        cache: 'no-store',
       });
       const data = await response.json();
       if (activeConversationIdRef.current !== conversationId) return;

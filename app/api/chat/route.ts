@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { translateText, detectLanguage } from '@/lib/services/translation';
 
 // POST /api/chat - Send a message
 export async function POST(request: NextRequest) {
@@ -11,7 +10,6 @@ export async function POST(request: NextRequest) {
       senderId,
       content,
       isFromCustomer = true,
-      targetLanguage,
     } = body;
 
     if (!conversationId || !senderId || !content) {
@@ -33,15 +31,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Detect the original language
-    const originalLanguage = await detectLanguage(content);
-
-    // Translate if needed
-    let translatedContent = null;
-    if (targetLanguage && originalLanguage !== targetLanguage) {
-      const translation = await translateText(content, targetLanguage, originalLanguage);
-      translatedContent = translation.translatedText;
-    }
+    // Keep chat posting fast: skip synchronous translation on send.
+    const originalLanguage = 'en';
+    const translatedContent = null;
 
     // Get the current session ID from the conversation
     const conversation = await prisma.conversation.findUnique({
