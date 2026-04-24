@@ -51,7 +51,11 @@ function isAnalyticsPath(pathname: string): boolean {
   );
 }
 
-function unauthorizedResponse(): NextResponse {
+function unauthorizedResponse(pathname: string): NextResponse {
+  if (pathname.startsWith("/api/analytics")) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   return new NextResponse("Authentication required.", {
     status: 401,
     headers: {
@@ -67,7 +71,7 @@ export function middleware(request: NextRequest) {
   if (isAnalyticsPath(pathname)) {
     const authorization = request.headers.get("authorization");
     if (!authorization || !authorization.startsWith("Basic ")) {
-      return unauthorizedResponse();
+      return unauthorizedResponse(pathname);
     }
 
     const encodedCredentials = authorization.split(" ")[1];
@@ -75,12 +79,12 @@ export function middleware(request: NextRequest) {
     try {
       decodedCredentials = atob(encodedCredentials);
     } catch {
-      return unauthorizedResponse();
+      return unauthorizedResponse(pathname);
     }
     const separatorIndex = decodedCredentials.indexOf(":");
 
     if (separatorIndex === -1) {
-      return unauthorizedResponse();
+      return unauthorizedResponse(pathname);
     }
 
     const username = decodedCredentials.slice(0, separatorIndex);
@@ -90,7 +94,7 @@ export function middleware(request: NextRequest) {
       username !== ANALYTICS_AUTH_USERNAME ||
       password !== ANALYTICS_AUTH_PASSWORD
     ) {
-      return unauthorizedResponse();
+      return unauthorizedResponse(pathname);
     }
   }
 
