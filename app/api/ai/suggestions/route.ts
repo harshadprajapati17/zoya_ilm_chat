@@ -2,60 +2,71 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateReplySuggestion } from '@/lib/services/aiSuggestions';
 import { translateText } from '@/lib/services/translation';
+import {
+  attachCustomerMessageToHistory,
+  isProvidedHistoryArray,
+  mergeConversationHistoryDbWins,
+  messagesToHistory,
+  sanitizeHistoryTailForSuggestion,
+} from '@/lib/services/conversationLLMContext';
 
 // POST /api/ai/suggestions - Generate AI reply suggestions
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { messageId, conversationId, customerMessage, targetLanguage = 'en', conversationHistory: providedHistory } = body;
+    const {
+      messageId,
+      conversationId,
+      customerMessage,
+      targetLanguage = 'en',
+      conversationHistory: providedHistory,
+    } = body;
 
     if (!customerMessage) {
-      return NextResponse.json(
-        { error: 'Customer message is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Customer message is required' }, { status: 400 });
     }
 
-    // Get conversation history - prefer provided history (from UI state), otherwise fetch from database
-    let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let historyTail = attachCustomerMessageToHistory([], customerMessage);
 
-    if (providedHistory && Array.isArray(providedHistory)) {
-      // Use provided conversation history (from UI state)
-      conversationHistory = providedHistory;
-    } else if (conversationId) {
-      // Fallback: Fetch from database if no history provided
-      const messages = await prisma.message.findMany({
+    if (conversationId) {
+      const dbMessages = await prisma.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: 'asc' },
-        take: 10, // Last 10 messages for context
+        take: 80,
         select: {
           content: true,
           isFromCustomer: true,
+          createdAt: true,
         },
       });
 
-      conversationHistory = messages.map(
-        (msg: { content: string; isFromCustomer: boolean }) => ({
-          role: msg.isFromCustomer ? ('user' as const) : ('assistant' as const),
-          content: msg.content,
+      const fromDb = messagesToHistory(dbMessages);
+      const clientHistory = isProvidedHistoryArray(providedHistory) ? providedHistory : [];
+      const merged =
+        clientHistory.length > 0 ? mergeConversationHistoryDbWins(fromDb, clientHistory) : fromDb;
+      historyTail = attachCustomerMessageToHistory(merged, customerMessage);
+
+      console.log(
+        '[api/ai/suggestions] history built',
+        JSON.stringify({
+          conversationId,
+          dbMessageCount: dbMessages.length,
+          usedClientOverlay: clientHistory.length > 0,
+          historyTurns: historyTail.length,
         })
       );
+    } else if (isProvidedHistoryArray(providedHistory) && providedHistory.length > 0) {
+      historyTail = attachCustomerMessageToHistory(providedHistory, customerMessage);
     }
 
-    // Generate AI suggestion
-    const suggestion = await generateReplySuggestion(
-      customerMessage,
-      conversationHistory
-    );
+    historyTail = sanitizeHistoryTailForSuggestion(historyTail);
+
+    const suggestion = await generateReplySuggestion(customerMessage, historyTail);
 
     // Translate the suggestion if needed
     let translatedReply = suggestion.suggestedReply;
     if (targetLanguage !== 'en') {
-      const translation = await translateText(
-        suggestion.suggestedReply,
-        targetLanguage,
-        'en'
-      );
+      const translation = await translateText(suggestion.suggestedReply, targetLanguage, 'en');
       translatedReply = translation.translatedText;
     }
 
@@ -80,13 +91,11 @@ export async function POST(request: NextRequest) {
       confidence: suggestion.confidence,
       relatedProducts: suggestion.relatedProducts,
       reasoning: suggestion.reasoning,
+      usedDefaultFallback: suggestion.usedDefaultFallback ?? false,
       suggestedReplyId, // Return the database ID for feedback tracking
     });
   } catch (error) {
     console.error('Error generating AI suggestion:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate suggestion' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to generate suggestion' }, { status: 500 });
   }
 }

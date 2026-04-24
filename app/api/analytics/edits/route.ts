@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import firstFiveCards from '@/data/mock/analytics/edits/first-five-cards.json';
+
+type DemoEditOverride = {
+  customerQuery: string;
+  originalSuggestion: string;
+  editedContent: string;
+  keyChanges: string[];
+  improvementNeeded: string[];
+};
 
 // GET /api/analytics/edits - Get detailed edit records
 export async function GET(request: NextRequest) {
@@ -94,8 +103,25 @@ export async function GET(request: NextRequest) {
       improvementNeeded: edit.improvementNeeded ? JSON.parse(edit.improvementNeeded) : [],
     }));
 
+    // Demo requirement: keep first 5 cards static with "slightly wrong" AI responses.
+    const demoOverrides = firstFiveCards as DemoEditOverride[];
+    const editsWithDemoTopFive = processedEdits.map((edit, index) => {
+      if (index >= 5 || !demoOverrides[index]) {
+        return edit;
+      }
+
+      return {
+        ...edit,
+        customerQuery: demoOverrides[index].customerQuery,
+        originalSuggestion: demoOverrides[index].originalSuggestion,
+        editedContent: demoOverrides[index].editedContent,
+        keyChanges: demoOverrides[index].keyChanges,
+        improvementNeeded: demoOverrides[index].improvementNeeded,
+      };
+    });
+
     return NextResponse.json({
-      edits: processedEdits,
+      edits: editsWithDemoTopFive,
       pagination: {
         page,
         limit,

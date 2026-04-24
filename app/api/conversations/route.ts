@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 // GET /api/conversations - Get all conversations (for lead management dashboard)
@@ -15,7 +16,15 @@ export async function GET(request: NextRequest) {
 
     const conversations = await prisma.conversation.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        customerId: true,
+        assignedManagerId: true,
+        status: true,
+        customerLanguage: true,
+        currentSessionId: true,
+        createdAt: true,
+        updatedAt: true,
         customer: {
           select: {
             id: true,
@@ -25,20 +34,52 @@ export async function GET(request: NextRequest) {
             language: true,
           },
         },
-        messages: {
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          select: {
-            content: true,
-            createdAt: true,
-            isFromCustomer: true,
-          },
-        },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
-    return NextResponse.json({ conversations });
+    const conversationIds = conversations.map((c) => c.id);
+    const lastByConversation = new Map<
+      string,
+      { content: string; createdAt: Date; isFromCustomer: boolean }
+    >();
+
+    if (conversationIds.length > 0) {
+      const rows = await prisma.$queryRaw<
+        Array<{
+          conversationId: string;
+          content: string;
+          createdAt: Date;
+          isFromCustomer: boolean;
+        }>
+      >(Prisma.sql`
+        SELECT DISTINCT ON ("conversationId")
+          "conversationId",
+          "content",
+          "createdAt",
+          "isFromCustomer"
+        FROM "Message"
+        WHERE "conversationId" IN (${Prisma.join(conversationIds)})
+        ORDER BY "conversationId", "createdAt" DESC
+      `);
+      for (const row of rows) {
+        lastByConversation.set(row.conversationId, {
+          content: row.content,
+          createdAt: row.createdAt,
+          isFromCustomer: row.isFromCustomer,
+        });
+      }
+    }
+
+    const conversationsWithPreview = conversations.map((c) => {
+      const last = lastByConversation.get(c.id);
+      return {
+        ...c,
+        messages: last ? [last] : [],
+      };
+    });
+
+    return NextResponse.json({ conversations: conversationsWithPreview });
   } catch (error) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json(

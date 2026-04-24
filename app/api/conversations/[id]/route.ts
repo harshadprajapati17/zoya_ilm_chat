@@ -90,3 +90,44 @@ export async function PATCH(
     );
   }
 }
+
+// DELETE /api/conversations/[id] - Delete a conversation (dev only)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json(
+        { error: 'Delete conversation is only available in development mode' },
+        { status: 403 }
+      );
+    }
+
+    const { id } = await params;
+
+    const existingConversation = await prisma.conversation.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existingConversation) {
+      return NextResponse.json(
+        { error: 'Conversation not found' },
+        { status: 404 }
+      );
+    }
+
+    await prisma.conversation.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true, deletedConversationId: id });
+  } catch (error) {
+    console.error('Error deleting conversation:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete conversation' },
+      { status: 500 }
+    );
+  }
+}

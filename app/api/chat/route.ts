@@ -93,25 +93,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const messages = await prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: 'asc' },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            role: true,
+    const [conversation, messages] = await Promise.all([
+      prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { currentSessionId: true },
+      }),
+      prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              name: true,
+              role: true,
+            },
+          },
+          suggestedReplies: {
+            take: 3,
+            orderBy: { confidence: 'desc' },
           },
         },
-        suggestedReplies: {
-          take: 3,
-          orderBy: { confidence: 'desc' },
-        },
-      },
-    });
+      }),
+    ]);
 
-    return NextResponse.json({ messages });
+    return NextResponse.json({
+      messages,
+      currentSessionId: conversation?.currentSessionId ?? null,
+    });
   } catch (error) {
     console.error('Error fetching messages:', error);
     return NextResponse.json(

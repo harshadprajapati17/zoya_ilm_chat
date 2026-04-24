@@ -55,6 +55,12 @@ interface InsightsData {
     count: number;
   }>;
   rawData: RawDataItem[];
+  allConversationsRawData?: RawDataItem[];
+  highIntentRawData?: RawDataItem[];
+  qualifiedLeadsRawData?: RawDataItem[];
+  customerIntentRawData?: Record<string, RawDataItem[]>;
+  hesitationRawData?: Record<string, RawDataItem[]>;
+  priceSensitivityRawData?: Record<string, RawDataItem[]>;
 }
 
 type TimeRange = '7d' | '30d' | '90d' | 'custom';
@@ -73,6 +79,30 @@ const OCCASION_KEYWORDS = [
   'in future',
   'future purchase',
 ];
+
+const QUALIFIED_LEAD_KEYWORDS = [
+  'store',
+  'location',
+  'address',
+  'available',
+  'in stock',
+  'have',
+  'details',
+  'specification',
+  'customize',
+  'custom',
+  'next step',
+  'how to buy',
+  'book',
+  'appointment',
+  'visit',
+];
+
+const isQualifiedLead = (item: RawDataItem): boolean => {
+  const query = item.customerQuery?.toLowerCase() || '';
+  const hasBuyingSignal = QUALIFIED_LEAD_KEYWORDS.some((keyword) => query.includes(keyword));
+  return hasBuyingSignal && item.acceptanceScore >= 0.6;
+};
 
 const isHesitationMatch = (reason: string, item: RawDataItem): boolean => {
   const query = item.customerQuery?.toLowerCase() || '';
@@ -255,11 +285,21 @@ export default function CustomerInsightsPage() {
     setIsCustomPickerOpen(false);
   };
 
-  const openModal = (title: string, filterFn?: (item: RawDataItem) => boolean) => {
+  const openModal = (
+    title: string,
+    filterFn?: (item: RawDataItem) => boolean,
+    sourceData?: RawDataItem[],
+    maxRecords?: number
+  ) => {
     if (!data) return;
 
-    const filteredData = filterFn ? data.rawData.filter(filterFn) : data.rawData;
-    setModalData({ title, data: filteredData, filterFn });
+    const baseData = sourceData ?? data.rawData;
+    const filteredData = filterFn ? baseData.filter(filterFn) : baseData;
+    const cappedData =
+      typeof maxRecords === 'number' && maxRecords >= 0
+        ? filteredData.slice(0, maxRecords)
+        : filteredData;
+    setModalData({ title, data: cappedData, filterFn });
     setModalOpen(true);
   };
 
@@ -308,7 +348,14 @@ export default function CustomerInsightsPage() {
             trend={data.metrics.totalConversationsTrend}
             subtitle="All chats"
             tooltipDescription="Total number of customer interactions (chat + calls) within the selected time period."
-            onClick={() => openModal('Total Conversations - All Customer Queries')}
+            onClick={() =>
+              openModal(
+                'Total Conversations - All Customer Queries',
+                undefined,
+                data.allConversationsRawData ?? data.rawData,
+                data.metrics.totalConversations
+              )
+            }
           />
           <MetricCard
             title="High Intent Customers"
@@ -316,7 +363,14 @@ export default function CustomerInsightsPage() {
             trend={data.metrics.highIntentTrend}
             subtitle="Ready to engage"
             tooltipDescription="Customers identified as having strong purchase intent based on conversation depth and intent signals."
-            onClick={() => openModal('High-Intent Customers (Acceptance Score > 70%)', (item) => item.acceptanceScore > 0.7)}
+            onClick={() =>
+              openModal(
+                'High-Intent Customers (Ready to engage)',
+                data.highIntentRawData ? undefined : (item) => item.acceptanceScore >= 0.7,
+                data.highIntentRawData ?? data.rawData,
+                data.metrics.highIntentCustomers
+              )
+            }
           />
           <MetricCard
             title="Qualified Leads"
@@ -324,7 +378,14 @@ export default function CustomerInsightsPage() {
             trend={data.metrics.qualifiedLeadsTrend}
             subtitle="Strong signals"
             tooltipDescription="Customers who showed clear buying interest (e.g., asked for store location, product details, or next steps)."
-            onClick={() => openModal('Qualified Leads (Top 19%)', (item) => item.acceptanceScore > 0.65)}
+            onClick={() =>
+              openModal(
+                'Qualified Leads (Store location, product details, next steps)',
+                data.qualifiedLeadsRawData ? undefined : isQualifiedLead,
+                data.qualifiedLeadsRawData ?? data.rawData,
+                data.metrics.qualifiedLeads
+              )
+            }
           />
         </div>
 
@@ -371,6 +432,11 @@ export default function CustomerInsightsPage() {
                     className="flex justify-between items-center py-2 cursor-pointer hover:bg-gray-50 px-2 rounded transition"
                     onClick={() => {
                       const intentName = item.name.toLowerCase();
+                      const staticIntentData = data.customerIntentRawData?.[item.name];
+                      if (staticIntentData) {
+                        openModal(`Customer Intent: ${item.name}`, undefined, staticIntentData);
+                        return;
+                      }
                       openModal(`Customer Intent: ${item.name}`, (dataItem) => {
                         const query = dataItem.customerQuery?.toLowerCase() || '';
                         if (intentName.includes('gift')) {
@@ -506,8 +572,11 @@ export default function CustomerInsightsPage() {
                   key={index}
                   className="cursor-pointer hover:bg-gray-50 p-2 rounded transition"
                   onClick={() => {
-                    // Note: This is mock data in the current implementation
-                    // In a real scenario, you'd filter by actual price ranges from product data
+                    const staticPriceData = data.priceSensitivityRawData?.[item.range];
+                    if (staticPriceData) {
+                      openModal(`Price Range: ${item.range}`, undefined, staticPriceData);
+                      return;
+                    }
                     openModal(`Price Range: ${item.range}`, () => true);
                   }}
                 >
@@ -554,6 +623,11 @@ export default function CustomerInsightsPage() {
                   key={index}
                   className="border-l-4 border-red-200 pl-4 py-2 cursor-pointer hover:bg-gray-50 transition rounded"
                   onClick={() => {
+                    const staticHesitationData = data.hesitationRawData?.[item.reason];
+                    if (staticHesitationData) {
+                      openModal(`Hesitation: ${item.reason}`, undefined, staticHesitationData);
+                      return;
+                    }
                     openModal(`Hesitation: ${item.reason}`, (dataItem) => isHesitationMatch(item.reason, dataItem));
                   }}
                 >
@@ -652,11 +726,6 @@ export default function CustomerInsightsPage() {
                           <span className="font-medium">Query: </span>
                           {item.customerQuery || 'No query recorded'}
                         </p>
-                        {item.editCategory && item.editCategory !== 'NONE' && (
-                          <span className="inline-block text-xs bg-stone-100 text-stone-700 px-2 py-1 rounded">
-                            {item.editCategory.replace(/_/g, ' ')}
-                          </span>
-                        )}
                       </div>
                     ))}
                     {modalData.data.length > 100 && (
@@ -818,7 +887,9 @@ interface MetricCardProps {
 }
 
 function MetricCard({ title, value, trend, subtitle, tooltipDescription, negative, onClick }: MetricCardProps) {
+  const roundedTrend = Math.round(trend);
   const isPositive = negative ? trend < 0 : trend > 0;
+  const isNeutral = roundedTrend === 0;
 
   return (
     <div
@@ -830,15 +901,17 @@ function MetricCard({ title, value, trend, subtitle, tooltipDescription, negativ
           <Users className="w-4 h-4 text-stone-600" />
         </div>
         <div className="flex items-center gap-1 text-xs">
-          {isPositive ? (
+          {isNeutral ? (
+            <span className="font-semibold text-gray-500">0%</span>
+          ) : isPositive ? (
             <>
               <TrendingUp className="w-3 h-3 text-green-600" />
-              <span className="text-green-600 font-semibold">+{Math.abs(trend)}%</span>
+              <span className="text-green-600 font-semibold">+{Math.abs(roundedTrend)}%</span>
             </>
           ) : (
             <>
               <TrendingDown className="w-3 h-3 text-red-600" />
-              <span className="text-red-600 font-semibold">-{Math.abs(trend)}%</span>
+              <span className="text-red-600 font-semibold">-{Math.abs(roundedTrend)}%</span>
             </>
           )}
         </div>

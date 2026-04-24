@@ -1,0 +1,220 @@
+{
+  "7d": [
+    {
+      "id": "conv_025",
+      "customerQuery": "Sure, share me store location. I want to purchase from there.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.83,
+      "createdAt": "2026-04-23T11:20:00.000Z"
+    },
+    {
+      "id": "conv_026",
+      "customerQuery": "What is next step to buy this necklace set?",
+      "editCategory": "TONE_REFINEMENT",
+      "acceptanceScore": 0.88,
+      "createdAt": "2026-04-23T12:05:00.000Z"
+    },
+    {
+      "id": "conv_027",
+      "customerQuery": "Please share store address and how to book an appointment for purchase.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.85,
+      "createdAt": "2026-04-23T13:10:00.000Z"
+    }
+  ],
+  "30d": [
+    {
+      "id": "conv_025",
+      "customerQuery": "Sure, share me store location. I want to purchase from there.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.83,
+      "createdAt": "2026-04-23T11:20:00.000Z"
+    },
+    {
+      "id": "conv_026",
+      "customerQuery": "What is next step to buy this necklace set?",
+      "editCategory": "TONE_REFINEMENT",
+      "acceptanceScore": 0.88,
+      "createdAt": "2026-04-23T12:05:00.000Z"
+    },
+    {
+      "id": "conv_027",
+      "customerQuery": "Please share store address and how to book an appointment for purchase.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.85,
+      "createdAt": "2026-04-23T13:10:00.000Z"
+    },
+    {
+      "id": "conv_002",
+      "customerQuery": "Can you share the nearest store location so I can visit and buy this ring?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.74,
+      "createdAt": "2026-04-22T11:05:00.000Z"
+    },
+    {
+      "id": "conv_004",
+      "customerQuery": "Please confirm store address and availability, I want to purchase these earrings today.",
+      "editCategory": "NONE",
+      "acceptanceScore": 0.69,
+      "createdAt": "2026-04-20T09:22:00.000Z"
+    },
+    {
+      "id": "conv_008",
+      "customerQuery": "What are the next steps to place this customized ring order?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.72,
+      "createdAt": "2026-04-18T12:07:00.000Z"
+    },
+    {
+      "id": "conv_010",
+      "customerQuery": "I am ready to buy the bridal set, please share booking steps and store details.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.81,
+      "createdAt": "2026-04-17T15:12:00.000Z"
+    }
+  ],
+  "90d": [
+    {
+      "id": "conv_025",
+      "customerQuery": "Sure, share me store location. I want to purchase from there.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.83,
+      "createdAt": "2026-04-23T11:20:00.000Z"
+    },
+    {
+      "id": "conv_026",
+      "customerQuery": "What is next step to buy this necklace set?",
+      "editCategory": "TONE_REFINEMENT",
+      "acceptanceScore": 0.88,
+      "createdAt": "2026-04-23T12:05:00.000Z"
+    },
+    {
+      "id": "conv_027",
+      "customerQuery": "Please share store address and how to book an appointment for purchase.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.85,
+      "createdAt": "2026-04-23T13:10:00.000Z"
+    },
+    {
+      "id": "conv_002",
+      "customerQuery": "Can you share the nearest store location so I can visit and buy this ring?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.74,
+      "createdAt": "2026-04-22T11:05:00.000Z"
+    },
+    {
+      "id": "conv_004",
+      "customerQuery": "Please confirm store address and availability, I want to purchase these earrings today.",
+      "editCategory": "NONE",
+      "acceptanceScore": 0.69,
+      "createdAt": "2026-04-20T09:22:00.000Z"
+    },
+    {
+      "id": "conv_008",
+      "customerQuery": "What are the next steps to place this customized ring order?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.72,
+      "createdAt": "2026-04-18T12:07:00.000Z"
+    },
+    {
+      "id": "conv_010",
+      "customerQuery": "I am ready to buy the bridal set, please share booking steps and store details.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.81,
+      "createdAt": "2026-04-17T15:12:00.000Z"
+    },
+    {
+      "id": "conv_013",
+      "customerQuery": "Share store location and appointment slot, I want to purchase this bridal necklace this week.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.76,
+      "createdAt": "2026-04-09T11:40:00.000Z"
+    },
+    {
+      "id": "conv_016",
+      "customerQuery": "Please share next step to confirm purchase for this engagement ring.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.79,
+      "createdAt": "2026-03-24T16:05:00.000Z"
+    },
+    {
+      "id": "conv_017",
+      "customerQuery": "Where is your store in Bangalore? I want to come and buy these bangles.",
+      "editCategory": "NONE",
+      "acceptanceScore": 0.63,
+      "createdAt": "2026-03-18T12:30:00.000Z"
+    },
+    {
+      "id": "conv_020",
+      "customerQuery": "Can you guide me through checkout steps to buy this customized oval-diamond ring?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.68,
+      "createdAt": "2026-02-26T14:55:00.000Z"
+    },
+    {
+      "id": "conv_022",
+      "customerQuery": "I want to purchase an investment piece this week, share store location and buying process.",
+      "editCategory": "NONE",
+      "acceptanceScore": 0.82,
+      "createdAt": "2025-12-22T11:12:00.000Z"
+    }
+  ],
+  "custom": [
+    {
+      "id": "conv_025",
+      "customerQuery": "Sure, share me store location. I want to purchase from there.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.83,
+      "createdAt": "2026-04-23T11:20:00.000Z"
+    },
+    {
+      "id": "conv_026",
+      "customerQuery": "What is next step to buy this necklace set?",
+      "editCategory": "TONE_REFINEMENT",
+      "acceptanceScore": 0.88,
+      "createdAt": "2026-04-23T12:05:00.000Z"
+    },
+    {
+      "id": "conv_027",
+      "customerQuery": "Please share store address and how to book an appointment for purchase.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.85,
+      "createdAt": "2026-04-23T13:10:00.000Z"
+    },
+    {
+      "id": "conv_002",
+      "customerQuery": "Can you share the nearest store location so I can visit and buy this ring?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.74,
+      "createdAt": "2026-04-22T11:05:00.000Z"
+    },
+    {
+      "id": "conv_004",
+      "customerQuery": "Please confirm store address and availability, I want to purchase these earrings today.",
+      "editCategory": "NONE",
+      "acceptanceScore": 0.69,
+      "createdAt": "2026-04-20T09:22:00.000Z"
+    },
+    {
+      "id": "conv_008",
+      "customerQuery": "What are the next steps to place this customized ring order?",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.72,
+      "createdAt": "2026-04-18T12:07:00.000Z"
+    },
+    {
+      "id": "conv_010",
+      "customerQuery": "I am ready to buy the bridal set, please share booking steps and store details.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.81,
+      "createdAt": "2026-04-17T15:12:00.000Z"
+    },
+    {
+      "id": "conv_013",
+      "customerQuery": "Share store location and appointment slot, I want to purchase this bridal necklace this week.",
+      "editCategory": "PRODUCT_ACCURACY",
+      "acceptanceScore": 0.76,
+      "createdAt": "2026-04-09T11:40:00.000Z"
+    }
+  ]
+}

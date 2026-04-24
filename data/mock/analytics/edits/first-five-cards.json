@@ -1,0 +1,72 @@
+[
+  {
+    "customerQuery": "Do you have this ring in size 11? I am unsure about the fit.",
+    "originalSuggestion": "Most of our jewelry pieces are adjustable or can be customized to your size. Which item are you interested in?",
+    "editedContent": "I can help with that. This ring can be checked in size 11. If it is unavailable, we can guide resizing options. Would you like me to confirm availability for this specific design?",
+    "keyChanges": [
+      "Answered the exact size question directly",
+      "Added a clear next step (availability check)",
+      "Kept tone helpful without sounding generic"
+    ],
+    "improvementNeeded": [
+      "Avoid generic replies; mention requested size first",
+      "Offer concrete next step in same response"
+    ]
+  },
+  {
+    "customerQuery": "Can this necklace be delivered before Friday?",
+    "originalSuggestion": "Delivery timelines vary by location. Please share your city to get accurate shipping details.",
+    "editedContent": "Yes, I can check that for you. Please share your city and pin code, and I will confirm if Friday delivery is available for this necklace.",
+    "keyChanges": [
+      "Added direct yes-oriented opening",
+      "Requested exact details needed for confirmation",
+      "Made response more action-oriented"
+    ],
+    "improvementNeeded": [
+      "Start with clear intent acknowledgement",
+      "Reduce uncertainty in first line"
+    ]
+  },
+  {
+    "customerQuery": "I want this as an anniversary gift. Can you suggest premium options?",
+    "originalSuggestion": "We have many premium options across categories. You can explore our latest collections.",
+    "editedContent": "Lovely choice for an anniversary gift. I can suggest premium options in rings, necklaces, or earrings. Tell me your preferred category and budget, and I will shortlist the best designs for you.",
+    "keyChanges": [
+      "Personalized response for gifting context",
+      "Narrowed options into clear categories",
+      "Added guided selection flow"
+    ],
+    "improvementNeeded": [
+      "Use customer occasion context in first sentence",
+      "Guide the user to a decision with specific prompts"
+    ]
+  },
+  {
+    "customerQuery": "Do you have any ring in rose gold under 3 lakhs?",
+    "originalSuggestion": "We have rose gold rings available in multiple price points. Please check our catalog.",
+    "editedContent": "Yes, we do have rose gold ring options under 3 lakhs. If you share your preferred style (solitaire, halo, or minimal), I can suggest matching pieces right away.",
+    "keyChanges": [
+      "Directly confirmed budget constraint",
+      "Added style-based guidance",
+      "Improved confidence and relevance"
+    ],
+    "improvementNeeded": [
+      "Answer price + material query directly",
+      "Avoid pushing customer to generic catalog view"
+    ]
+  },
+  {
+    "customerQuery": "What is the next step if I want to buy this design from your store?",
+    "originalSuggestion": "You can visit our store to see products and decide what to buy.",
+    "editedContent": "Great choice. The next step is to share your city so I can provide the nearest store location and help schedule an appointment for this design.",
+    "keyChanges": [
+      "Provided a clear purchase journey",
+      "Added location-based action step",
+      "Made tone more proactive and service-oriented"
+    ],
+    "improvementNeeded": [
+      "Offer structured next steps for high-intent users",
+      "Use proactive language for purchase-ready customers"
+    ]
+  }
+]

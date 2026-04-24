@@ -1,0 +1,170 @@
+[
+  {
+    "id": "conv_001",
+    "customerQuery": "I want something luxurious for my wedding reception, maybe a heavy necklace set.",
+    "editCategory": "TONE_REFINEMENT",
+    "acceptanceScore": 0.86,
+    "createdAt": "2026-04-22T10:15:00.000Z"
+  },
+  {
+    "id": "conv_002",
+    "customerQuery": "Can you show me diamond rings under 3 lakhs?",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.74,
+    "createdAt": "2026-04-22T11:05:00.000Z"
+  },
+  {
+    "id": "conv_003",
+    "customerQuery": "Need bangles as an anniversary gift. Something elegant, not too heavy.",
+    "editCategory": "STYLE_ALIGNMENT",
+    "acceptanceScore": 0.78,
+    "createdAt": "2026-04-21T16:40:00.000Z"
+  },
+  {
+    "id": "conv_004",
+    "customerQuery": "Do you have emerald earrings in white gold?",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.69,
+    "createdAt": "2026-04-20T09:22:00.000Z"
+  },
+  {
+    "id": "conv_005",
+    "customerQuery": "This looks expensive. Any similar design in lower budget?",
+    "editCategory": "PRICE_FRAMING",
+    "acceptanceScore": 0.42,
+    "createdAt": "2026-04-20T14:10:00.000Z"
+  },
+  {
+    "id": "conv_006",
+    "customerQuery": "I want to compare this with other mangalsutra options first.",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.45,
+    "createdAt": "2026-04-19T13:18:00.000Z"
+  },
+  {
+    "id": "conv_007",
+    "customerQuery": "Show me trending necklace collections for self purchase.",
+    "editCategory": "TONE_REFINEMENT",
+    "acceptanceScore": 0.66,
+    "createdAt": "2026-04-19T17:52:00.000Z"
+  },
+  {
+    "id": "conv_008",
+    "customerQuery": "Can I customize this ring with a bigger center stone?",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.72,
+    "createdAt": "2026-04-18T12:07:00.000Z"
+  },
+  {
+    "id": "conv_009",
+    "customerQuery": "Not buying now, maybe next month for a festive occasion.",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.39,
+    "createdAt": "2026-04-17T08:30:00.000Z"
+  },
+  {
+    "id": "conv_010",
+    "customerQuery": "Do you have bridal sets in rose gold?",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.81,
+    "createdAt": "2026-04-17T15:12:00.000Z"
+  },
+  {
+    "id": "conv_011",
+    "customerQuery": "Looking for investment jewellery, heavy pieces above 10 lakhs.",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.84,
+    "createdAt": "2026-04-16T10:55:00.000Z"
+  },
+  {
+    "id": "conv_012",
+    "customerQuery": "I am not sure about this design, can you suggest a simpler style?",
+    "editCategory": "STYLE_ALIGNMENT",
+    "acceptanceScore": 0.48,
+    "createdAt": "2026-04-16T18:01:00.000Z"
+  },
+  {
+    "id": "conv_013",
+    "customerQuery": "Need a bridal necklace set under 6 lakhs.",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.76,
+    "createdAt": "2026-04-09T11:40:00.000Z"
+  },
+  {
+    "id": "conv_014",
+    "customerQuery": "Can you compare solitaire ring options in 2 to 4 lakh range?",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.58,
+    "createdAt": "2026-04-07T13:25:00.000Z"
+  },
+  {
+    "id": "conv_015",
+    "customerQuery": "Looking for gifting earrings for my wife, something premium.",
+    "editCategory": "TONE_REFINEMENT",
+    "acceptanceScore": 0.71,
+    "createdAt": "2026-04-05T09:10:00.000Z"
+  },
+  {
+    "id": "conv_016",
+    "customerQuery": "Show me engagement rings in rose gold.",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.79,
+    "createdAt": "2026-03-24T16:05:00.000Z"
+  },
+  {
+    "id": "conv_017",
+    "customerQuery": "Do you have lightweight daily wear bangles?",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.63,
+    "createdAt": "2026-03-18T12:30:00.000Z"
+  },
+  {
+    "id": "conv_018",
+    "customerQuery": "Price seems high, any EMI options for this necklace?",
+    "editCategory": "PRICE_FRAMING",
+    "acceptanceScore": 0.44,
+    "createdAt": "2026-03-12T18:20:00.000Z"
+  },
+  {
+    "id": "conv_019",
+    "customerQuery": "Need wedding jewellery but buying after two months.",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.41,
+    "createdAt": "2026-03-02T10:45:00.000Z"
+  },
+  {
+    "id": "conv_020",
+    "customerQuery": "Can this ring be customized with an oval diamond?",
+    "editCategory": "PRODUCT_ACCURACY",
+    "acceptanceScore": 0.68,
+    "createdAt": "2026-02-26T14:55:00.000Z"
+  },
+  {
+    "id": "conv_021",
+    "customerQuery": "Show me latest statement earrings collection.",
+    "editCategory": "TONE_REFINEMENT",
+    "acceptanceScore": 0.65,
+    "createdAt": "2026-02-15T17:35:00.000Z"
+  },
+  {
+    "id": "conv_022",
+    "customerQuery": "I am browsing for investment jewellery above 12 lakhs.",
+    "editCategory": "NONE",
+    "acceptanceScore": 0.82,
+    "createdAt": "2025-12-22T11:12:00.000Z"
+  },
+  {
+    "id": "conv_023",
+    "customerQuery": "Need a festive gifting pendant set under 2 lakhs.",
+    "editCategory": "STYLE_ALIGNMENT",
+    "acceptanceScore": 0.61,
+    "createdAt": "2025-12-10T09:50:00.000Z"
+  },
+  {
+    "id": "conv_024",
+    "customerQuery": "Not sure about this style, show me more minimalist options.",
+    "editCategory": "STYLE_ALIGNMENT",
+    "acceptanceScore": 0.46,
+    "createdAt": "2025-11-18T15:40:00.000Z"
+  }
+]

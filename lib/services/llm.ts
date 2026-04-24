@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
+import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai';
+import type { ChatHistoryTurn, GeminiContentBlock } from './conversationLLMContext';
+import { historyToGeminiContents } from './conversationLLMContext';
 
 type LLMRole = 'system' | 'user' | 'assistant';
 
@@ -22,12 +24,13 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const gemini = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+const gemini = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || undefined });
 
 const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash';
-const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004';
+const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
+const GEMINI_EMBEDDING_DIMENSION = Number(process.env.GEMINI_EMBEDDING_DIMENSION || 1536);
 
 function ensureProviderCredentials() {
   if (provider === 'gemini' && !process.env.GOOGLE_API_KEY) {
@@ -38,18 +41,181 @@ function ensureProviderCredentials() {
   }
 }
 
-function toGeminiContents(messages: LLMMessage[]) {
-  return messages
-    .filter((m) => m.role !== 'system')
-    .map((message) => ({
-      role: message.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: message.content }],
-    }));
-}
-
 function getSystemInstruction(messages: LLMMessage[]) {
   const systemMessages = messages.filter((m) => m.role === 'system').map((m) => m.content);
   return systemMessages.length > 0 ? systemMessages.join('\n\n') : undefined;
+}
+
+const GEMINI_LOG_MAX_CHARS = Number(process.env.LLM_LOG_MAX_CHARS || 8000);
+const GEMINI_LOG_FULL = process.env.LLM_LOG_FULL === '1' || process.env.LLM_LOG_FULL === 'true';
+
+function truncateForLog(text: string, max = GEMINI_LOG_MAX_CHARS): string {
+  if (GEMINI_LOG_FULL) return text;
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
+}
+
+function logGeminiRequest(
+  source: string,
+  payload: {
+    model: string;
+    systemInstruction: string;
+    contents: GeminiContentBlock[];
+    generationConfig: Record<string, unknown>;
+  }
+) {
+  const contentsForLog = payload.contents.map((c, i) => ({
+    index: i,
+    role: c.role,
+    textLength: c.parts[0]?.text?.length ?? 0,
+    textPreview: truncateForLog(c.parts[0]?.text ?? ''),
+  }));
+  console.log(
+    `[LLM][Gemini][request][${source}]`,
+    JSON.stringify(
+      {
+        model: payload.model,
+        systemInstructionLength: payload.systemInstruction.length,
+        systemInstructionPreview: truncateForLog(payload.systemInstruction),
+        contents: contentsForLog,
+        generationConfig: payload.generationConfig,
+      },
+      null,
+      2
+    )
+  );
+}
+
+function logGeminiResponse(source: string, text: string) {
+  console.log(
+    `[LLM][Gemini][response][${source}]`,
+    JSON.stringify(
+      {
+        textLength: text.length,
+        textPreview: truncateForLog(text),
+      },
+      null,
+      2
+    )
+  );
+}
+
+function extractGeminiText(result: {
+  text?: string;
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+  }>;
+}): string {
+  if (result.text && result.text.trim().length > 0) {
+    return result.text;
+  }
+  const parts = result.candidates?.[0]?.content?.parts ?? [];
+  const joined = parts
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  return joined;
+}
+
+const HISTORY_TURN_LOG_MAX = Number(process.env.LLM_LOG_HISTORY_TURN_MAX || 1200);
+
+/** Always-on logs for the reply-suggestion path (both providers): system + role-wise history. */
+function logReplySuggestionInput(p: LLMProvider, systemInstruction: string, historyTail: ChatHistoryTurn[]) {
+  const history = historyTail.map((t, i) => ({
+    index: i,
+    role: t.role,
+    contentLength: t.content.length,
+    contentPreview: truncateForLog(t.content, HISTORY_TURN_LOG_MAX),
+  }));
+  console.log(
+    `[LLM][reply-suggestion][input][${p}]`,
+    JSON.stringify(
+      {
+        systemInstructionLength: systemInstruction.length,
+        systemInstructionPreview: truncateForLog(systemInstruction),
+        historyTurnCount: historyTail.length,
+        history,
+      },
+      null,
+      2
+    )
+  );
+}
+
+function logReplySuggestionOutput(p: LLMProvider, text: string) {
+  console.log(
+    `[LLM][reply-suggestion][output][${p}]`,
+    JSON.stringify(
+      {
+        textLength: text.length,
+        textPreview: truncateForLog(text),
+      },
+      null,
+      2
+    )
+  );
+}
+
+/**
+ * Gemini chat with explicit system instruction and multi-turn `contents` (user/model).
+ * Use for the suggestion pipeline; logs request/response for observability.
+ */
+export async function generateGeminiChatFromContents(
+  systemInstruction: string,
+  contents: GeminiContentBlock[],
+  options: ChatCompletionOptions = {},
+  logMeta: { source: string; skipGeminiDetailLogs?: boolean } = { source: 'gemini-contents' }
+): Promise<string> {
+  const modelName = options.model || GEMINI_CHAT_MODEL;
+  const generationConfig = {
+    temperature: options.temperature ?? 0.7,
+    maxOutputTokens: options.maxTokens ?? 500,
+  };
+
+  if (!logMeta.skipGeminiDetailLogs) {
+    logGeminiRequest(logMeta.source, {
+      model: modelName,
+      systemInstruction,
+      contents,
+      generationConfig,
+    });
+  }
+
+  const result = await gemini.models.generateContent({
+    model: modelName,
+    contents,
+    config: {
+      systemInstruction: systemInstruction.trim() ? systemInstruction : undefined,
+      ...generationConfig,
+      safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      ],
+    },
+  });
+
+  const text = extractGeminiText(result);
+  if (!text) {
+    const candidateCount = result.candidates?.length ?? 0;
+    console.error(
+      `[LLM][Gemini][empty-response][${logMeta.source}]`,
+      JSON.stringify(
+        {
+          candidateCount,
+          firstCandidatePartCount: result.candidates?.[0]?.content?.parts?.length ?? 0,
+        },
+        null,
+        2
+      )
+    );
+    throw new Error('Gemini returned empty response text');
+  }
+  if (!logMeta.skipGeminiDetailLogs) {
+    logGeminiResponse(logMeta.source, text);
+  }
+  return text;
 }
 
 async function generateOpenAIEmbedding(text: string): Promise<number[]> {
@@ -63,9 +229,23 @@ async function generateOpenAIEmbedding(text: string): Promise<number[]> {
 }
 
 async function generateGeminiEmbedding(text: string): Promise<number[]> {
-  const model = gemini.getGenerativeModel({ model: GEMINI_EMBEDDING_MODEL });
-  const response = await model.embedContent(text);
-  return response.embedding.values;
+  const response = await gemini.models.embedContent({
+    model: GEMINI_EMBEDDING_MODEL,
+    contents: text,
+    config: {
+      outputDimensionality: GEMINI_EMBEDDING_DIMENSION,
+    },
+  });
+  const values = response.embeddings?.[0]?.values;
+  if (!values || values.length === 0) {
+    throw new Error('Gemini embedding response did not contain vector values');
+  }
+  if (values.length !== GEMINI_EMBEDDING_DIMENSION) {
+    throw new Error(
+      `Gemini embedding dimension mismatch: expected ${GEMINI_EMBEDDING_DIMENSION}, got ${values.length}`
+    );
+  }
+  return values;
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
@@ -99,26 +279,19 @@ async function generateGeminiChatCompletion(
   messages: LLMMessage[],
   options: ChatCompletionOptions = {}
 ): Promise<string> {
-  const model = gemini.getGenerativeModel({
-    model: options.model || GEMINI_CHAT_MODEL,
-    systemInstruction: getSystemInstruction(messages),
-  });
-
-  const result = await model.generateContent({
-    contents: toGeminiContents(messages),
-    generationConfig: {
-      temperature: options.temperature ?? 0.7,
-      maxOutputTokens: options.maxTokens ?? 500,
-    },
-    safetySettings: [
-      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    ],
-  });
-
-  return result.response.text();
+  const systemInstruction = getSystemInstruction(messages) ?? '';
+  const historyTail: ChatHistoryTurn[] = messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: m.content,
+    }));
+  return generateGeminiChatFromContents(
+    systemInstruction,
+    historyToGeminiContents(historyTail),
+    options,
+    { source: 'legacy-llm-messages' }
+  );
 }
 
 export async function generateChatCompletion(
@@ -133,6 +306,51 @@ export async function generateChatCompletion(
     return await generateOpenAIChatCompletion(messages, options);
   } catch (error) {
     console.error('Error generating chat completion:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reply-suggestion pipeline: explicit system instruction + multi-turn history (no duplicate user turn).
+ * Gemini: logs IO via {@link generateGeminiChatFromContents}. OpenAI: unchanged chat messages shape.
+ */
+export async function generateSuggestionChatCompletion(
+  systemInstruction: string,
+  historyTail: ChatHistoryTurn[],
+  options: ChatCompletionOptions = {}
+): Promise<string> {
+  try {
+    ensureProviderCredentials();
+    const suggestionOptions: ChatCompletionOptions = {
+      maxTokens: 650,
+      temperature: 0.78,
+      ...options,
+    };
+    logReplySuggestionInput(provider, systemInstruction, historyTail);
+
+    if (provider === 'gemini') {
+      const text = await generateGeminiChatFromContents(
+        systemInstruction,
+        historyToGeminiContents(historyTail),
+        suggestionOptions,
+        { source: 'reply-suggestion', skipGeminiDetailLogs: true }
+      );
+      logReplySuggestionOutput('gemini', text);
+      return text;
+    }
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemInstruction },
+      ...historyTail.map((t) => ({
+        role: (t.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: t.content,
+      })),
+    ];
+    const text = await generateOpenAIChatCompletion(messages, suggestionOptions);
+    logReplySuggestionOutput('openai', text);
+    return text;
+  } catch (error) {
+    console.error('Error generating suggestion chat completion:', error);
     throw error;
   }
 }

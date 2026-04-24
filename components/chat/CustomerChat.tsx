@@ -43,23 +43,35 @@ export default function CustomerChat({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
+  const fetchInFlightRef = useRef(false);
 
   const fetchMessages = useCallback(async () => {
-    if (!conversationId) return;
+    if (!conversationId || fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
 
     try {
       const response = await fetch(`/api/chat?conversationId=${conversationId}`, {
         cache: 'no-store',
       });
       const data = await response.json();
+      if (!response.ok) {
+        console.error('Error fetching messages:', data?.error ?? response.status);
+        return;
+      }
+      if (typeof data.currentSessionId === 'string' && data.currentSessionId) {
+        setSessionId(data.currentSessionId);
+      }
+      const incoming = Array.isArray(data.messages) ? data.messages : [];
       setMessages((prev) => {
         const localPendingOrFailed = prev.filter(
           (msg) => msg.id.startsWith('temp-') && msg.isFromCustomer
         );
-        return [...data.messages, ...localPendingOrFailed];
+        return [...incoming, ...localPendingOrFailed];
       });
     } catch (error) {
       console.error('Error fetching messages:', error);
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, [conversationId]);
 
@@ -81,7 +93,7 @@ export default function CustomerChat({
     prevMessageCountRef.current = messages.length;
   }, [messages]);
 
-  // Load initial messages and subscribe to realtime inserts for this conversation.
+  // Load initial messages and subscribe to realtime changes on Message for this conversation.
   useEffect(() => {
     if (!conversationId) return;
 
@@ -99,27 +111,88 @@ export default function CustomerChat({
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'Message',
         },
         (payload) => {
-          const nextConversationId =
-            typeof payload.new === 'object' && payload.new && 'conversationId' in payload.new
-              ? String(payload.new.conversationId)
-              : null;
+          const row = payload.new ?? payload.old;
+          const rowData = row && typeof row === 'object' ? (row as Record<string, unknown>) : null;
+          const nextConversationId = rowData
+            ? String(
+                rowData.conversationId ??
+                  rowData.conversation_id ??
+                  rowData.conversationid ??
+                  rowData.conversationID ??
+                  ''
+              ) || null
+            : null;
+          const shouldFetch =
+            nextConversationId === conversationId ||
+            // Some Supabase payloads can omit/rename the field depending on schema/history.
+            // For single-conversation customer chat, safe fallback is to fetch.
+            nextConversationId === null;
 
-          if (nextConversationId === conversationId) {
+          if (shouldFetch) {
+            console.log('[CustomerChat:realtime] Message change matched conversation', {
+              conversationId,
+              eventType: payload.eventType,
+              rowConversationId: nextConversationId,
+              rowKeys: rowData ? Object.keys(rowData) : [],
+            });
             void fetchMessages();
+          } else {
+            console.log('[CustomerChat:realtime] Message change ignored', {
+              conversationId,
+              eventType: payload.eventType,
+              rowConversationId: nextConversationId,
+              rowKeys: rowData ? Object.keys(rowData) : [],
+            });
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[CustomerChat:realtime] Channel status', {
+          conversationId,
+          status,
+        });
+        // Self-heal after websocket reconnects or transient subscription failures.
+        if (status === 'SUBSCRIBED') {
+          void fetchMessages();
+        }
+      });
 
     return () => {
       void supabaseClient.removeChannel(channel);
     };
   }, [conversationId, fetchMessages]);
+
+  // One-shot catch-up when tab/network state changes.
+  useEffect(() => {
+    if (showPreChatForm || !conversationId) return;
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchMessages();
+      }
+    };
+    const onFocus = () => {
+      void fetchMessages();
+    };
+    const onOnline = () => {
+      void fetchMessages();
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [showPreChatForm, conversationId, fetchMessages]);
 
   const initializeConversation = async () => {
     setIsLoading(true);
@@ -330,7 +403,14 @@ export default function CustomerChat({
 
         {/* Filter messages to only show current session for customers */}
         {messages
-          .filter((msg) => msg && msg.id && msg.sessionId === sessionId)
+          .filter((msg) => {
+            if (!msg?.id) return false;
+            if (msg.id.startsWith('temp-')) return true;
+            // Match server session when set; include untagged rows (legacy / partial writes)
+            // so manager replies are not hidden when sessionId is missing on the row.
+            if (!sessionId) return true;
+            return !msg.sessionId || msg.sessionId === sessionId;
+          })
           .map((message) => (
           <div
             key={message.id}

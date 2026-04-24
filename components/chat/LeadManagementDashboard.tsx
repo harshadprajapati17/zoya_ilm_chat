@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
   MessageSquare,
@@ -16,6 +16,8 @@ import {
   Copy,
   Maximize2,
   Minimize2,
+  MoreVertical,
+  Trash2,
 } from 'lucide-react';
 import MessageContent from './MessageContent';
 
@@ -57,13 +59,14 @@ interface AISuggestion {
   suggestedReply: string;
   translatedReply: string;
   confidence: number;
+  usedDefaultFallback?: boolean;
   relatedProducts: Array<{
     name: string;
     price: number;
     currency: string;
     link: string;
   }>;
-  suggestedReplyId?: string; // ID from database for feedback tracking
+  suggestedReplyId?: string;
 }
 
 interface LeadManagementDashboardProps {
@@ -84,6 +87,419 @@ const EDIT_REASONS = [
 ];
 */
 
+// ---------------------------------------------------------------------------
+// ReplyComposer — owns `draft` state so keystrokes never re-render the parent
+// ---------------------------------------------------------------------------
+
+interface ReplyComposerHandle {
+  getDraft: () => string;
+  setDraft: (value: string) => void;
+  focus: () => void;
+}
+
+interface ReplyComposerProps {
+  aiSuggestion: AISuggestion | null;
+  isLoadingSuggestion: boolean;
+  aiComposerLayout: 'inline' | 'overlay';
+  aiReplyEditMode: boolean;
+  aiReplyComposerTab: 'edit' | 'preview';
+  aiSuggestionExpanded: boolean;
+  isSending: boolean;
+  customerLanguage: string;
+  translatingInput: boolean;
+  relatedProductsBlock: React.ReactNode;
+  onSend: (draft: string) => void;
+  onTranslate: (text: string) => Promise<string>;
+  onEditModeChange: (editing: boolean) => void;
+  onComposerTabChange: (tab: 'edit' | 'preview') => void;
+  onExpandChange: () => void;
+  onCopyAiSuggestion: () => void;
+  onInsertAiSuggestion: () => void;
+}
+
+const ReplyComposer = forwardRef<ReplyComposerHandle, ReplyComposerProps>(
+  function ReplyComposer(
+    {
+      aiSuggestion,
+      isLoadingSuggestion,
+      aiComposerLayout,
+      aiReplyEditMode,
+      aiReplyComposerTab,
+      aiSuggestionExpanded,
+      isSending,
+      customerLanguage,
+      translatingInput,
+      relatedProductsBlock,
+      onSend,
+      onTranslate,
+      onEditModeChange,
+      onComposerTabChange,
+      onExpandChange,
+      onCopyAiSuggestion,
+      onInsertAiSuggestion,
+    },
+    ref,
+  ) {
+    const [draft, setDraft] = useState('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    useImperativeHandle(ref, () => ({
+      getDraft: () => draft,
+      setDraft: (value: string) => setDraft(value),
+      focus: () => textareaRef.current?.focus(),
+    }), [draft]);
+
+    // Auto-resize textarea when draft changes
+    useEffect(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.style.height = 'auto';
+      const vhCap =
+        typeof window !== 'undefined' ? Math.floor(window.innerHeight * 0.32) : 240;
+      const maxHeight = Math.min(240, Math.max(100, vhCap));
+      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }, [draft]);
+
+    // Focus textarea when entering edit mode
+    useEffect(() => {
+      if (aiReplyEditMode && aiReplyComposerTab === 'edit') {
+        textareaRef.current?.focus();
+      }
+    }, [aiReplyEditMode, aiReplyComposerTab]);
+
+    const handleSend = () => {
+      if (!draft.trim() || isSending) return;
+      onSend(draft);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
+      }
+    };
+
+    const handleTranslate = async () => {
+      if (!draft.trim()) return;
+      const translated = await onTranslate(draft);
+      setDraft(translated);
+    };
+
+    return (
+      <div
+        className="shrink-0 p-4"
+        style={{
+          background: 'var(--zoya-chat-footer-bg)',
+          borderTop: '2px solid var(--zoya-gold)',
+        }}
+      >
+        {isLoadingSuggestion && !aiSuggestion && (
+          <div className="mb-3 flex items-center gap-2 text-sm text-amber-900/80">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-600" />
+            <span>Generating AI suggestion...</span>
+          </div>
+        )}
+
+        {/* Translate bar */}
+        {customerLanguage !== 'en' && draft.trim() && (
+          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <Languages className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-800">
+                Customer speaks <strong>{customerLanguage.toUpperCase()}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleTranslate}
+              disabled={translatingInput}
+              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs font-medium"
+            >
+              {translatingInput ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Translating...
+                </>
+              ) : (
+                <>
+                  <Languages className="w-3 h-3" />
+                  Translate to {customerLanguage.toUpperCase()}
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* AI suggestion overlay (when user had a draft) */}
+        {aiSuggestion && aiComposerLayout === 'overlay' && (
+          <div className="mb-3 flex flex-col gap-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-3">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--zoya-accent)]">
+                      AI suggested reply
+                      <span className="font-normal text-[var(--zoya-muted)]">
+                        {' '}
+                        ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
+                      Copy to paste after your message, or Insert to replace your draft.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onExpandChange}
+                  className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-amber-100/80 hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                  aria-expanded={aiSuggestionExpanded}
+                  title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
+                >
+                  {aiSuggestionExpanded ? (
+                    <Minimize2 className="h-4 w-4" aria-hidden />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" aria-hidden />
+                  )}
+                </button>
+              </div>
+              <div
+                className={`mb-3 overflow-y-auto overscroll-contain rounded-md border border-[#E8E4DF] bg-white px-3 py-2 ${
+                  aiSuggestionExpanded
+                    ? 'max-h-[min(55dvh,28rem)]'
+                    : 'max-h-[min(12rem,28dvh)]'
+                }`}
+              >
+                <MessageContent
+                  content={aiSuggestion.suggestedReply}
+                  className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onCopyAiSuggestion}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#C4B5A5] bg-white px-3 py-2 text-xs font-medium text-[var(--zoya-accent)] transition-colors hover:bg-[#faf8f6]"
+                >
+                  <Copy className="h-3.5 w-3.5 shrink-0" />
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={onInsertAiSuggestion}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#C4B5A5] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#b8a899]"
+                >
+                  Insert
+                </button>
+              </div>
+            </div>
+            {relatedProductsBlock}
+          </div>
+        )}
+
+        {/* AI suggestion inline (AI owns composer) */}
+        {aiSuggestion && aiComposerLayout === 'inline' ? (
+          <div className="flex flex-col gap-3">
+            {aiReplyEditMode ? (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div
+                    className="flex w-fit gap-1 rounded-lg border border-[#E0D9D2] bg-white/90 p-1"
+                    role="tablist"
+                    aria-label="Reply composer"
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={aiReplyComposerTab === 'edit'}
+                      onClick={() => onComposerTabChange('edit')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                        aiReplyComposerTab === 'edit'
+                          ? 'bg-[#C4B5A5] text-white'
+                          : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
+                      }`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={aiReplyComposerTab === 'preview'}
+                      onClick={() => onComposerTabChange('preview')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                        aiReplyComposerTab === 'preview'
+                          ? 'bg-[#C4B5A5] text-white'
+                          : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
+                      }`}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onExpandChange}
+                    className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                    aria-expanded={aiSuggestionExpanded}
+                    title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
+                  >
+                    {aiSuggestionExpanded ? (
+                      <Minimize2 className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" aria-hidden />
+                    )}
+                  </button>
+                </div>
+                {aiReplyComposerTab === 'edit' ? (
+                  <textarea
+                    ref={textareaRef}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Type your reply..."
+                    className={`box-border min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
+                      aiSuggestionExpanded
+                        ? 'h-[min(55dvh,28rem)]'
+                        : 'h-[min(15rem,32dvh)]'
+                    }`}
+                    rows={1}
+                    disabled={isSending}
+                    onKeyDown={handleKeyDown}
+                  />
+                ) : (
+                  <div
+                    className={`box-border min-h-[100px] overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 ${
+                      aiSuggestionExpanded
+                        ? 'h-[min(55dvh,28rem)]'
+                        : 'h-[min(15rem,32dvh)]'
+                    }`}
+                  >
+                    {draft.trim() ? (
+                      <MessageContent
+                        content={draft}
+                        className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                      />
+                    ) : (
+                      <p className="text-sm text-[#A9A9A9]">Nothing to preview yet.</p>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-start gap-2">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--zoya-accent)]">
+                        AI suggested reply
+                        <span className="font-normal text-[var(--zoya-muted)]">
+                          {' '}
+                          ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
+                        </span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
+                        Click the reply below to edit, or send as-is.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onExpandChange}
+                    className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+                    aria-expanded={aiSuggestionExpanded}
+                    title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
+                  >
+                    {aiSuggestionExpanded ? (
+                      <Minimize2 className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" aria-hidden />
+                    )}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onEditModeChange(true);
+                    onComposerTabChange('edit');
+                  }}
+                  className={`group grid min-h-[100px] w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-[10px] border border-[#E0D9D2] bg-white text-left transition-colors hover:border-[#C4B5A5] hover:bg-[#faf8f6] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
+                    aiSuggestionExpanded
+                      ? 'max-h-[min(55dvh,28rem)]'
+                      : 'max-h-[min(15rem,32dvh)]'
+                  }`}
+                >
+                  <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-3 text-left">
+                    <MessageContent
+                      content={draft}
+                      className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5 border-t border-[#E8E4DF] bg-[#faf8f6] px-4 py-2 text-xs font-medium text-[#C4B5A5]">
+                    <Pencil className="h-3.5 w-3.5" />
+                    Click to edit
+                  </div>
+                </button>
+              </>
+            )}
+
+            {relatedProductsBlock}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!draft.trim() || isSending}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                {isSending ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 shrink-0" />
+                )}
+                Send
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your reply..."
+              className="max-h-[min(15rem,32dvh)] min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
+              rows={3}
+              disabled={isSending}
+              onKeyDown={handleKeyDown}
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!draft.trim() || isSending}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                {isSending ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 shrink-0" />
+                )}
+                Send
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// LeadManagementDashboard
+// ---------------------------------------------------------------------------
+
 export default function LeadManagementDashboard({
   managerId,
   managerName,
@@ -92,7 +508,6 @@ export default function LeadManagementDashboard({
   const [conversationsInitialLoading, setConversationsInitialLoading] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
@@ -104,12 +519,11 @@ export default function LeadManagementDashboard({
   const [aiReplyEditMode, setAiReplyEditMode] = useState(false);
   const [aiReplyComposerTab, setAiReplyComposerTab] = useState<'edit' | 'preview'>('edit');
   const [relatedProductsOpen, setRelatedProductsOpen] = useState(true);
-  /** `inline` = AI owns composer; `overlay` = user had a draft when AI arrived — show suggestion above input with Copy / Insert */
   const [aiComposerLayout, setAiComposerLayout] = useState<'inline' | 'overlay'>('inline');
-  /** Expanded = taller max-height on the AI reply panel; scroll stays inside the panel (not the page). */
   const [aiSuggestionExpanded, setAiSuggestionExpanded] = useState(false);
+  const [suggestionToast, setSuggestionToast] = useState<string | null>(null);
+  const [showConversationActions, setShowConversationActions] = useState(false);
 
-  // Feedback tracking state
   const [usedAISuggestion, setUsedAISuggestion] = useState<{
     suggestedReplyId: string | null;
     originalSuggestion: string;
@@ -117,24 +531,44 @@ export default function LeadManagementDashboard({
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<Message[]>([]);
   const prevMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
-  const inputMessageRef = useRef('');
-  /** Ignore AI fetch results if the user switched conversations before the request finished. */
+  const composerRef = useRef<ReplyComposerHandle>(null);
   const activeConversationIdRef = useRef<string | null>(null);
-  /** Abort stale polling message requests when conversation changes or a newer poll starts. */
   const messagesAbortControllerRef = useRef<AbortController | null>(null);
-  /** Abort stale AI suggestion requests when conversation changes or a newer request starts. */
   const suggestionAbortControllerRef = useRef<AbortController | null>(null);
-  /** Debounce auto-suggestion so rapid state changes don't trigger extra calls. */
   const suggestionDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationActionsRef = useRef<HTMLDivElement>(null);
+  const isDevMode = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
-    inputMessageRef.current = inputMessage;
-  }, [inputMessage]);
+    return () => {
+      if (suggestionToastTimeoutRef.current) {
+        clearTimeout(suggestionToastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showConversationActions) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        conversationActionsRef.current &&
+        !conversationActionsRef.current.contains(event.target as Node)
+      ) {
+        setShowConversationActions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [showConversationActions]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -143,18 +577,19 @@ export default function LeadManagementDashboard({
   // When a new AI suggestion arrives: keep user draft + overlay, or replace input (inline)
   useEffect(() => {
     if (!aiSuggestion) return;
-    const hadDraft = inputMessageRef.current.trim().length > 0;
+    const currentDraft = composerRef.current?.getDraft() ?? '';
+    const hadDraft = currentDraft.trim().length > 0;
     setAiReplyEditMode(false);
     setAiReplyComposerTab('edit');
     setRelatedProductsOpen(true);
-
     setAiSuggestionExpanded(false);
+
     if (hadDraft) {
       setAiComposerLayout('overlay');
       setUsedAISuggestion(null);
     } else {
       setAiComposerLayout('inline');
-      setInputMessage(aiSuggestion.suggestedReply);
+      composerRef.current?.setDraft(aiSuggestion.suggestedReply);
       const lastCustomerMessage = messagesRef.current.filter((m) => m.isFromCustomer).pop();
       setUsedAISuggestion({
         suggestedReplyId: aiSuggestion.suggestedReplyId || null,
@@ -184,7 +619,7 @@ export default function LeadManagementDashboard({
       suggestionDebounceTimeoutRef.current = null;
     }
 
-    setInputMessage('');
+    composerRef.current?.setDraft('');
     setAiSuggestion(null);
     setLastSuggestedMessageId(null);
     setUsedAISuggestion(null);
@@ -195,16 +630,11 @@ export default function LeadManagementDashboard({
     setRelatedProductsOpen(true);
     setAiComposerLayout('inline');
     setAiSuggestionExpanded(false);
+    setShowConversationActions(false);
     setMessages([]);
   }, [selectedConversation?.id]);
 
-  useEffect(() => {
-    if (aiReplyEditMode && aiReplyComposerTab === 'edit') {
-      textareaRef.current?.focus();
-    }
-  }, [aiReplyEditMode, aiReplyComposerTab]);
-
-  // Smart auto-scroll - only scroll if user is at bottom or new message added
+  // Smart auto-scroll
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -212,7 +642,6 @@ export default function LeadManagementDashboard({
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     const newMessageAdded = messages.length > prevMessageCountRef.current;
 
-    // Auto-scroll if user is near bottom OR a new message was added
     if (shouldAutoScrollRef.current || isAtBottom || newMessageAdded) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       shouldAutoScrollRef.current = false;
@@ -314,17 +743,12 @@ export default function LeadManagementDashboard({
 
     const lastMessage = messages[messages.length - 1];
 
-    // Only trigger AI suggestion if:
-    // 1. Last message is from customer
-    // 2. We haven't already generated suggestion for this message
-    // 3. Not currently loading a suggestion
     if (
       lastMessage &&
       lastMessage.isFromCustomer &&
       lastMessage.id !== lastSuggestedMessageId &&
       !isLoadingSuggestion
     ) {
-      // Replace stale suggestion as soon as a newer customer message arrives.
       setAiSuggestion(null);
       setUsedAISuggestion(null);
       if (suggestionDebounceTimeoutRef.current) {
@@ -349,9 +773,10 @@ export default function LeadManagementDashboard({
         cache: 'no-store',
       });
       const data = await response.json();
-      setConversations(data.conversations);
+      setConversations(Array.isArray(data?.conversations) ? data.conversations : []);
     } catch (error) {
       console.error('Error fetching conversations:', error);
+      setConversations([]);
     } finally {
       setConversationsInitialLoading(false);
     }
@@ -369,15 +794,26 @@ export default function LeadManagementDashboard({
       });
       const data = await response.json();
       if (activeConversationIdRef.current !== conversationId) return;
-      setMessages(data.messages);
+      setMessages(Array.isArray(data?.messages) ? data.messages : []);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching messages:', error);
+      setMessages([]);
     }
   };
 
   const getAISuggestion = async () => {
     if (!selectedConversation) return;
+
+    const showSuggestionToast = (message: string) => {
+      setSuggestionToast(message);
+      if (suggestionToastTimeoutRef.current) {
+        clearTimeout(suggestionToastTimeoutRef.current);
+      }
+      suggestionToastTimeoutRef.current = setTimeout(() => {
+        setSuggestionToast(null);
+      }, 4000);
+    };
 
     const conversationId = selectedConversation.id;
     suggestionAbortControllerRef.current?.abort();
@@ -391,8 +827,6 @@ export default function LeadManagementDashboard({
 
       if (!lastCustomerMessage) return;
 
-      // Build conversation history from current UI state (not database)
-      // This ensures we use the messages visible in the UI, not deleted ones
       const conversationHistory = messages.map(msg => ({
         role: msg.isFromCustomer ? 'user' : 'assistant',
         content: msg.content
@@ -403,19 +837,27 @@ export default function LeadManagementDashboard({
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          messageId: lastCustomerMessage.id, // Pass messageId to save suggestion to database
+          conversationId: selectedConversation.id,
+          messageId: lastCustomerMessage.id,
           customerMessage: lastCustomerMessage.content,
           targetLanguage: selectedConversation.customerLanguage,
-          conversationHistory: conversationHistory, // Send UI state instead
+          conversationHistory: conversationHistory,
         }),
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to generate suggestion');
+      }
       if (activeConversationIdRef.current !== conversationId) return;
+      if (data?.usedDefaultFallback) {
+        showSuggestionToast('Server error, responding with default message.');
+      }
       setAiSuggestion(data);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error getting AI suggestion:', error);
+      showSuggestionToast('Server error, unable to generate AI suggestion.');
     } finally {
       if (activeConversationIdRef.current === conversationId) {
         setIsLoadingSuggestion(false);
@@ -426,7 +868,6 @@ export default function LeadManagementDashboard({
   const toggleMessageTranslation = async (messageId: string) => {
     console.log('[Translation] Toggle called for message:', messageId);
 
-    // If already showing translation, just hide it
     if (showTranslations.has(messageId)) {
       console.log('[Translation] Hiding translation');
       const newSet = new Set(showTranslations);
@@ -435,7 +876,6 @@ export default function LeadManagementDashboard({
       return;
     }
 
-    // Find the message
     const message = messages.find(m => m.id === messageId);
     if (!message) {
       console.error('[Translation] Message not found:', messageId);
@@ -449,7 +889,6 @@ export default function LeadManagementDashboard({
       content: message.content.substring(0, 50)
     });
 
-    // If message already has translation, just show it
     if (message.translatedContent && message.originalLanguage !== 'en') {
       console.log('[Translation] Showing existing translation:', message.translatedContent.substring(0, 50));
       const newSet = new Set(showTranslations);
@@ -458,7 +897,6 @@ export default function LeadManagementDashboard({
       return;
     }
 
-    // Otherwise, fetch translation
     console.log('[Translation] Fetching new translation...');
     setTranslatingMessageId(messageId);
     try {
@@ -482,14 +920,12 @@ export default function LeadManagementDashboard({
       const data = await response.json();
       console.log('[Translation] Translation received:', data);
 
-      // Update message with translation
       setMessages(prev => prev.map(m =>
         m.id === messageId
           ? { ...m, translatedContent: data.translatedText }
           : m
       ));
 
-      // Show translation
       const newSet = new Set(showTranslations);
       newSet.add(messageId);
       setShowTranslations(newSet);
@@ -502,25 +938,24 @@ export default function LeadManagementDashboard({
     }
   };
 
-  const translateInputToCustomerLanguage = async () => {
-    if (!selectedConversation || !inputMessage.trim()) return;
-
+  const handleTranslateInput = async (text: string): Promise<string> => {
+    if (!selectedConversation) return text;
     setTranslatingInput(true);
     try {
       const response = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: inputMessage,
+          text,
           targetLanguage: selectedConversation.customerLanguage,
           sourceLanguage: 'en',
         }),
       });
-
       const data = await response.json();
-      setInputMessage(data.translatedText);
+      return data.translatedText ?? text;
     } catch (error) {
       console.error('Error translating input:', error);
+      return text;
     } finally {
       setTranslatingInput(false);
     }
@@ -529,33 +964,26 @@ export default function LeadManagementDashboard({
   const deleteMessage = async (messageId: string) => {
     if (!selectedConversation) return;
 
-    // Immediately remove from UI (optimistic update)
     setMessages((prev) => prev.filter(m => m.id !== messageId));
-
-    // Clear AI suggestion and reset tracking to regenerate with new context
     setAiSuggestion(null);
     setLastSuggestedMessageId(null);
 
-    // Also delete from database (fire and forget - UI already updated)
     try {
       await fetch(`/api/chat?messageId=${messageId}`, {
         method: 'DELETE',
       });
     } catch (error) {
       console.error('Error deleting message from database:', error);
-      // Note: We don't revert the UI change even if DB delete fails
-      // This ensures the regenerate feature works immediately
     }
   };
 
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || !selectedConversation || isSending) return;
+  const sendMessage = async (draft: string) => {
+    if (!draft.trim() || !selectedConversation || isSending) return;
 
     setIsSending(true);
-    shouldAutoScrollRef.current = true; // Force scroll when admin sends message
+    shouldAutoScrollRef.current = true;
 
-    // Capture current values before clearing state
-    const messageContent = inputMessage;
+    const messageContent = draft;
     const feedbackData = usedAISuggestion;
 
     try {
@@ -573,20 +1001,16 @@ export default function LeadManagementDashboard({
 
       const data = await response.json();
       setMessages((prev) => [...prev, data.message]);
-      setInputMessage('');
+      composerRef.current?.setDraft('');
       setAiSuggestion(null);
-      setUsedAISuggestion(null); // Clear tracking state
+      setUsedAISuggestion(null);
 
-      // Check if we need to capture feedback (AI suggestion was used and edited)
       if (feedbackData && feedbackData.suggestedReplyId) {
         const originalSuggestion = feedbackData.originalSuggestion.trim();
         const editedContent = messageContent.trim();
 
-        // Detect if edit was made (content changed)
         if (originalSuggestion !== editedContent) {
           console.log('[Feedback] Edit detected, submitting feedback...');
-
-          // Submit feedback for analysis (fire and forget - don't block UI)
           try {
             await fetch('/api/ai/feedback', {
               method: 'POST',
@@ -608,15 +1032,11 @@ export default function LeadManagementDashboard({
             console.log('[Feedback] Feedback submitted successfully');
           } catch (error) {
             console.error('[Feedback] Error submitting feedback:', error);
-            // Don't block UI on feedback submission failure
           }
         } else {
           console.log('[Feedback] No edit detected - suggestion used as-is');
         }
       }
-
-      // Reset the suggestion tracking so new customer messages can trigger suggestions
-      // But keep lastSuggestedMessageId so we don't re-suggest for old messages
     } catch (error) {
       console.error('Error sending message:', error);
     } finally {
@@ -624,31 +1044,45 @@ export default function LeadManagementDashboard({
     }
   };
 
+  const deleteConversation = async () => {
+    if (!selectedConversation || !isDevMode) return;
 
-  // Helper function to check if conversation has unread customer message
+    const conversationId = selectedConversation.id;
+    const customerName = selectedConversation.customer.name;
+    const confirmed = window.confirm(
+      `Delete conversation with ${customerName}? This will remove all messages and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to delete conversation');
+      }
+
+      setConversations((prev) => prev.filter((conv) => conv.id !== conversationId));
+      setSelectedConversation(null);
+      setMessages([]);
+      setAiSuggestion(null);
+      setUsedAISuggestion(null);
+      setShowConversationActions(false);
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    }
+  };
+
   const hasUnreadMessage = (conv: Conversation) => {
     if (!conv.messages || conv.messages.length === 0) return false;
-    const lastMessage = conv.messages[0]; // First message in array is the latest (DESC order)
+    const lastMessage = conv.messages[0];
     return lastMessage.isFromCustomer;
   };
 
-  const autoResizeTextarea = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    const vhCap =
-      typeof window !== 'undefined' ? Math.floor(window.innerHeight * 0.32) : 240;
-    const maxHeight = Math.min(240, Math.max(100, vhCap));
-    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  };
-
-  useEffect(() => {
-    autoResizeTextarea();
-  }, [inputMessage]);
-
-  // Filter conversations based on search query
-  const filteredConversations = conversations.filter((conv) => {
+  const filteredConversations = (conversations ?? []).filter((conv) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -669,7 +1103,7 @@ export default function LeadManagementDashboard({
 
   const insertAiSuggestionOverDraft = () => {
     if (!aiSuggestion) return;
-    setInputMessage(aiSuggestion.suggestedReply);
+    composerRef.current?.setDraft(aiSuggestion.suggestedReply);
     setAiComposerLayout('inline');
     setAiReplyEditMode(false);
     setAiReplyComposerTab('edit');
@@ -743,7 +1177,6 @@ export default function LeadManagementDashboard({
           borderColor: 'var(--zoya-border-light)',
         }}
       >
-        {/* Title + search share one surface (aligned with main app sidebar) */}
         <header
           className="shrink-0 border-b px-4 pt-4 pb-4"
           style={{
@@ -834,119 +1267,111 @@ export default function LeadManagementDashboard({
             </div>
           ) : (
             filteredConversations.map((conv) => {
-            const isUnread = hasUnreadMessage(conv);
-            const isSelected = selectedConversation?.id === conv.id;
-            const initials = conv.customer.name
-              .split(' ')
-              .map((w: string) => w[0])
-              .join('')
-              .slice(0, 2)
-              .toUpperCase();
+              const isUnread = hasUnreadMessage(conv);
+              const isSelected = selectedConversation?.id === conv.id;
+              const initials = conv.customer.name
+                .split(' ')
+                .map((w: string) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
 
-            return (
-            <div
-              key={conv.id}
-              onClick={() => setSelectedConversation(conv)}
-              className="flex gap-2.5 px-4 py-2.5 cursor-pointer transition-colors border-b"
-              style={{
-                borderColor: 'var(--zoya-border-light)',
-                borderLeft: isSelected
-                  ? '3px solid var(--zoya-gold)'
-                  : isUnread
-                    ? '3px solid var(--zoya-ok)'
-                    : '3px solid transparent',
-                background: isSelected
-                  ? 'rgba(139, 115, 85, 0.12)'
-                  : isUnread
-                    ? 'rgba(91, 140, 90, 0.10)'
-                    : 'transparent',
-              }}
-            >
-              {/* Avatar */}
-              <div
-                className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold"
-                style={{
-                  background: isSelected
-                    ? 'var(--zoya-gold-bg)'
-                    : isUnread
-                      ? 'rgba(91, 140, 90, 0.12)'
-                      : 'var(--zoya-bg-soft)',
-                  color: isSelected
-                    ? 'var(--zoya-gold)'
-                    : isUnread
-                      ? 'var(--zoya-ok)'
-                      : 'var(--zoya-gold)',
-                  border: isSelected
-                    ? '1.5px solid var(--zoya-gold-pale)'
-                    : isUnread
-                      ? '1.5px solid rgba(91, 140, 90, 0.3)'
-                      : '1.5px solid var(--zoya-border-light)',
-                }}
-              >
-                {initials}
-              </div>
-
-              {/* Content */}
-              <div className="min-w-0 flex-1">
-                {/* Row 1: Name + Time */}
-                <div className="flex items-center justify-between gap-1">
-                  <h3
-                    className="text-[13px] truncate"
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => setSelectedConversation(conv)}
+                  className="flex gap-2.5 px-4 py-2.5 cursor-pointer transition-colors border-b"
+                  style={{
+                    borderColor: 'var(--zoya-border-light)',
+                    borderLeft: isSelected
+                      ? '3px solid var(--zoya-gold)'
+                      : '3px solid transparent',
+                    background: isSelected
+                      ? 'rgba(139, 115, 85, 0.12)'
+                        : 'transparent',
+                  }}
+                >
+                  <div
+                    className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold"
                     style={{
-                      fontWeight: isUnread ? 700 : 600,
-                      color: isUnread ? 'var(--foreground)' : 'var(--foreground)',
+                      background: isSelected
+                        ? 'var(--zoya-gold-bg)'
+                        : 'var(--zoya-bg-soft)',
+                      color: isSelected
+                        ? 'var(--zoya-gold)'
+                        : 'var(--zoya-gold)',
+                      border: isSelected
+                        ? '1.5px solid var(--zoya-gold-pale)'
+                        : '1.5px solid var(--zoya-border-light)',
                     }}
                   >
-                    {conv.customer.name}
-                  </h3>
-                  <span
-                    className="text-[10px] whitespace-nowrap shrink-0"
-                    style={{ color: isUnread ? 'var(--zoya-ok)' : 'var(--zoya-muted)', fontWeight: isUnread ? 600 : 400 }}
-                  >
-                    {new Date(conv.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
+                    {initials}
+                  </div>
 
-                {/* Row 2: Message preview + unread badge */}
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <p
-                    className="text-xs truncate flex-1"
-                    style={{
-                      color: isUnread ? 'var(--foreground)' : 'var(--zoya-accent)',
-                      fontWeight: isUnread ? 500 : 400,
-                    }}
-                  >
-                    {conv.messages[0]?.content || 'No messages yet'}
-                  </p>
-                  {isUnread && (
-                    <span
-                      className="shrink-0 w-[18px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center"
-                      style={{ background: 'var(--zoya-ok)' }}
-                    >
-                      ●
-                    </span>
-                  )}
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <h3
+                        className="text-[13px] truncate"
+                        style={{
+                          fontWeight: isUnread ? 700 : 600,
+                          color: isUnread ? 'var(--foreground)' : 'var(--foreground)',
+                        }}
+                      >
+                        {conv.customer.name}
+                      </h3>
+                      <span
+                        className="text-[10px] whitespace-nowrap shrink-0"
+                        style={{ color: 'var(--zoya-muted)', fontWeight: isUnread ? 600 : 400 }}
+                      >
+                        {new Date(conv.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
 
-                {/* Row 3: Language badge */}
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span
-                    className="text-[9px] font-semibold px-1.5 py-px rounded"
-                    style={{ background: 'var(--zoya-bg-soft)', color: 'var(--zoya-accent)' }}
-                  >
-                    {conv.customerLanguage.toUpperCase()}
-                  </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p
+                        className="text-xs truncate flex-1"
+                        style={{
+                          color: isUnread ? 'var(--foreground)' : 'var(--zoya-accent)',
+                          fontWeight: isUnread ? 500 : 400,
+                        }}
+                      >
+                        {conv.messages[0]?.content || 'No messages yet'}
+                      </p>
+                      {isUnread && (
+                        <span
+                          className="shrink-0 w-[18px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center"
+                          style={{ background: 'var(--zoya-ok)' }}
+                        >
+                          ●
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span
+                        className="text-[9px] font-semibold px-1.5 py-px rounded"
+                        style={{ background: 'var(--zoya-bg-soft)', color: 'var(--zoya-accent)' }}
+                      >
+                        {conv.customerLanguage.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            );
-          })
+              );
+            })
           )}
         </div>
       </div>
 
-      {/* Chat Area — min-h-0 so messages + composer stay within h-screen */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Chat Area */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {suggestionToast && (
+          <div className="pointer-events-none absolute right-4 top-4 z-50">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 shadow-md">
+              {suggestionToast}
+            </div>
+          </div>
+        )}
         {selectedConversation ? (
           <>
             {/* Chat Header */}
@@ -971,10 +1396,7 @@ export default function LeadManagementDashboard({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    // Regenerate: discard manager draft so the new suggestion uses inline
-                    // layout (AI reply in composer) instead of overlay + separate input.
-                    inputMessageRef.current = '';
-                    setInputMessage('');
+                    composerRef.current?.setDraft('');
                     setUsedAISuggestion(null);
                     setAiSuggestion(null);
                     setLastSuggestedMessageId(null);
@@ -986,6 +1408,37 @@ export default function LeadManagementDashboard({
                 >
                   <RefreshCw className="w-5 h-5 text-amber-600" />
                 </button>
+                {isDevMode && (
+                  <div className="relative" ref={conversationActionsRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowConversationActions((prev) => !prev)}
+                      className="p-2 hover:bg-amber-100 rounded-lg transition-colors"
+                      title="Conversation actions"
+                      aria-label="Conversation actions"
+                      aria-haspopup="menu"
+                      aria-expanded={showConversationActions}
+                    >
+                      <MoreVertical className="w-5 h-5 text-amber-600" />
+                    </button>
+                    {showConversationActions && (
+                      <div
+                        className="absolute right-0 top-full z-20 mt-1 min-w-[190px] overflow-hidden rounded-lg border border-[#E8E4DF] bg-white shadow-lg"
+                        role="menu"
+                      >
+                        <button
+                          type="button"
+                          onClick={deleteConversation}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                          role="menuitem"
+                        >
+                          <Trash2 className="h-4 w-4 shrink-0" />
+                          Delete conversation
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -995,7 +1448,6 @@ export default function LeadManagementDashboard({
               className="zoya-chat-surface min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
             >
               {messages.filter(m => m && m.id).map((message, index) => {
-                // Check if this is the start of a new session (different sessionId from previous message)
                 const isNewSession = index > 0 &&
                   message.sessionId &&
                   messages[index - 1].sessionId &&
@@ -1003,7 +1455,6 @@ export default function LeadManagementDashboard({
 
                 return (
                   <div key={message.id}>
-                    {/* Session Divider */}
                     {isNewSession && (
                       <div className="flex items-center justify-center my-6">
                         <div className="flex-1 border-t" style={{ borderColor: 'var(--zoya-border)' }}></div>
@@ -1019,7 +1470,6 @@ export default function LeadManagementDashboard({
                       </div>
                     )}
 
-                    {/* Message */}
                     <div
                       className={`flex flex-col ${
                         message.isFromCustomer ? 'items-start' : 'items-end'
@@ -1041,7 +1491,6 @@ export default function LeadManagementDashboard({
                               </span>
                             )}
                           </p>
-                          {/* Translate button for customer messages in non-English */}
                           {message.isFromCustomer && message.originalLanguage !== 'en' && (
                             <button
                               onClick={() => toggleMessageTranslation(message.id)}
@@ -1067,7 +1516,6 @@ export default function LeadManagementDashboard({
                           content={message.content}
                           className="text-sm whitespace-pre-wrap break-words"
                         />
-                        {/* Show translation if toggled */}
                         {showTranslations.has(message.id) && (
                           <div className="mt-2 pt-2 border-t border-blue-100 bg-blue-50 px-3 py-2 -mx-4 -mb-3 rounded-b-lg">
                             <p className="text-xs font-semibold text-blue-700 mb-1">English Translation:</p>
@@ -1098,318 +1546,27 @@ export default function LeadManagementDashboard({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Reply composer: normal input while AI loads; AI suggestion replaces input when ready */}
-            <div
-              className="shrink-0 p-4"
-              style={{
-                background: 'var(--zoya-chat-footer-bg)',
-                borderTop: '2px solid var(--zoya-gold)',
-              }}
-            >
-              {selectedConversation.customerLanguage !== 'en' && inputMessage.trim() && (
-                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <Languages className="w-4 h-4 text-blue-600" />
-                    <span className="text-blue-800">
-                      Customer speaks <strong>{selectedConversation.customerLanguage.toUpperCase()}</strong>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={translateInputToCustomerLanguage}
-                    disabled={translatingInput}
-                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs font-medium"
-                  >
-                    {translatingInput ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Translating...
-                      </>
-                    ) : (
-                      <>
-                        <Languages className="w-3 h-3" />
-                        Translate to {selectedConversation.customerLanguage.toUpperCase()}
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {isLoadingSuggestion && !aiSuggestion && (
-                <div className="mb-3 flex items-center gap-2 text-sm text-amber-900/80">
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
-                  <span>Generating AI suggestion…</span>
-                </div>
-              )}
-
-              {aiSuggestion && aiComposerLayout === 'overlay' && (
-                <div className="mb-3 flex flex-col gap-3">
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-3">
-                    <div className="mb-2 flex items-start justify-between gap-2">
-                      <div className="flex min-w-0 flex-1 items-start gap-2">
-                        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-[var(--zoya-accent)]">
-                            AI suggested reply
-                            <span className="font-normal text-[var(--zoya-muted)]">
-                              {' '}
-                              ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
-                            </span>
-                          </p>
-                          <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
-                            Copy to paste after your message, or Insert to replace your draft.
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setAiSuggestionExpanded((e) => !e)}
-                        className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-amber-100/80 hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
-                        aria-expanded={aiSuggestionExpanded}
-                        title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
-                      >
-                        {aiSuggestionExpanded ? (
-                          <Minimize2 className="h-4 w-4" aria-hidden />
-                        ) : (
-                          <Maximize2 className="h-4 w-4" aria-hidden />
-                        )}
-                      </button>
-                    </div>
-                    <div
-                      className={`mb-3 overflow-y-auto overscroll-contain rounded-md border border-[#E8E4DF] bg-white px-3 py-2 ${
-                        aiSuggestionExpanded
-                          ? 'max-h-[min(55dvh,28rem)]'
-                          : 'max-h-[min(12rem,28dvh)]'
-                      }`}
-                    >
-                      <MessageContent
-                        content={aiSuggestion.suggestedReply}
-                        className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={copyAiSuggestion}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#C4B5A5] bg-white px-3 py-2 text-xs font-medium text-[var(--zoya-accent)] transition-colors hover:bg-[#faf8f6]"
-                      >
-                        <Copy className="h-3.5 w-3.5 shrink-0" />
-                        Copy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={insertAiSuggestionOverDraft}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#C4B5A5] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#b8a899]"
-                      >
-                        Insert
-                      </button>
-                    </div>
-                  </div>
-                  {relatedProductsCollapsibleBlock}
-                </div>
-              )}
-
-              {aiSuggestion && aiComposerLayout === 'inline' ? (
-                <div className="flex flex-col gap-3">
-                  {aiReplyEditMode ? (
-                    <>
-                      <div className="flex items-center justify-between gap-2">
-                        <div
-                          className="flex w-fit gap-1 rounded-lg border border-[#E0D9D2] bg-white/90 p-1"
-                          role="tablist"
-                          aria-label="Reply composer"
-                        >
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={aiReplyComposerTab === 'edit'}
-                            onClick={() => setAiReplyComposerTab('edit')}
-                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                              aiReplyComposerTab === 'edit'
-                                ? 'bg-[#C4B5A5] text-white'
-                                : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
-                            }`}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={aiReplyComposerTab === 'preview'}
-                            onClick={() => setAiReplyComposerTab('preview')}
-                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                              aiReplyComposerTab === 'preview'
-                                ? 'bg-[#C4B5A5] text-white'
-                                : 'text-[var(--zoya-accent)] hover:bg-[var(--zoya-chat-footer-bg)]'
-                            }`}
-                          >
-                            Preview
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAiSuggestionExpanded((e) => !e)}
-                          className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
-                          aria-expanded={aiSuggestionExpanded}
-                          title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
-                        >
-                          {aiSuggestionExpanded ? (
-                            <Minimize2 className="h-4 w-4" aria-hidden />
-                          ) : (
-                            <Maximize2 className="h-4 w-4" aria-hidden />
-                          )}
-                        </button>
-                      </div>
-                      {aiReplyComposerTab === 'edit' ? (
-                        <textarea
-                          ref={textareaRef}
-                          value={inputMessage}
-                          onChange={(e) => setInputMessage(e.target.value)}
-                          placeholder="Type your reply..."
-                          className={`box-border min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
-                            aiSuggestionExpanded
-                              ? 'h-[min(55dvh,28rem)]'
-                              : 'h-[min(15rem,32dvh)]'
-                          }`}
-                          rows={1}
-                          disabled={isSending}
-                          onKeyDown={(e) => {
-                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                              e.preventDefault();
-                              sendMessage();
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div
-                          className={`box-border min-h-[100px] overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 ${
-                            aiSuggestionExpanded
-                              ? 'h-[min(55dvh,28rem)]'
-                              : 'h-[min(15rem,32dvh)]'
-                          }`}
-                        >
-                          {inputMessage.trim() ? (
-                            <MessageContent
-                              content={inputMessage}
-                              className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
-                            />
-                          ) : (
-                            <p className="text-sm text-[#A9A9A9]">Nothing to preview yet.</p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 flex-1 items-start gap-2">
-                          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-[var(--zoya-accent)]">
-                              AI suggested reply
-                              <span className="font-normal text-[var(--zoya-muted)]">
-                                {' '}
-                                ({(aiSuggestion.confidence * 100).toFixed(0)}% confidence)
-                              </span>
-                            </p>
-                            <p className="mt-0.5 text-xs text-[var(--zoya-muted)]">
-                              Click the reply below to edit, or send as-is.
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAiSuggestionExpanded((e) => !e)}
-                          className="shrink-0 rounded-md p-1.5 text-[var(--zoya-muted)] transition-colors hover:bg-[#f0ebe4] hover:text-[var(--zoya-accent)] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
-                          aria-expanded={aiSuggestionExpanded}
-                          title={aiSuggestionExpanded ? 'Use smaller reply panel' : 'Use larger reply panel'}
-                        >
-                          {aiSuggestionExpanded ? (
-                            <Minimize2 className="h-4 w-4" aria-hidden />
-                          ) : (
-                            <Maximize2 className="h-4 w-4" aria-hidden />
-                          )}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAiReplyEditMode(true);
-                          setAiReplyComposerTab('edit');
-                        }}
-                        className={`group grid min-h-[100px] w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-[10px] border border-[#E0D9D2] bg-white text-left transition-colors hover:border-[#C4B5A5] hover:bg-[#faf8f6] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35 ${
-                          aiSuggestionExpanded
-                            ? 'max-h-[min(55dvh,28rem)]'
-                            : 'max-h-[min(15rem,32dvh)]'
-                        }`}
-                      >
-                        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-3 text-left">
-                          <MessageContent
-                            content={inputMessage}
-                            className="text-sm whitespace-pre-wrap break-words text-[var(--zoya-accent)]"
-                          />
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5 border-t border-[#E8E4DF] bg-[#faf8f6] px-4 py-2 text-xs font-medium text-[#C4B5A5]">
-                          <Pencil className="h-3.5 w-3.5" />
-                          Click to edit
-                        </div>
-                      </button>
-                    </>
-                  )}
-
-                  {relatedProductsCollapsibleBlock}
-
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={sendMessage}
-                      disabled={!inputMessage.trim() || isSending}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                    >
-                      {isSending ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4 shrink-0" />
-                      )}
-                      Send
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <textarea
-                    ref={textareaRef}
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Type your reply..."
-                    className="max-h-[min(15rem,32dvh)] min-h-[100px] w-full resize-none overflow-y-auto rounded-[10px] border border-[#E0D9D2] bg-white px-4 py-3 text-[var(--zoya-accent)] placeholder:text-[#A9A9A9] focus:border-[#C4B5A5] focus:outline-none focus:ring-2 focus:ring-[#C4B5A5]/35"
-                    rows={3}
-                    disabled={isSending}
-                    onKeyDown={(e) => {
-                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        sendMessage();
-                      }
-                    }}
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={sendMessage}
-                      disabled={!inputMessage.trim() || isSending}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--zoya-gold)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[colors,box-shadow] hover:bg-[var(--zoya-gold-light)] hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                    >
-                      {isSending ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4 shrink-0" />
-                      )}
-                      Send
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Reply Composer */}
+            <ReplyComposer
+              ref={composerRef}
+              aiSuggestion={aiSuggestion}
+              isLoadingSuggestion={isLoadingSuggestion}
+              aiComposerLayout={aiComposerLayout}
+              aiReplyEditMode={aiReplyEditMode}
+              aiReplyComposerTab={aiReplyComposerTab}
+              aiSuggestionExpanded={aiSuggestionExpanded}
+              isSending={isSending}
+              customerLanguage={selectedConversation.customerLanguage}
+              translatingInput={translatingInput}
+              relatedProductsBlock={relatedProductsCollapsibleBlock}
+              onSend={sendMessage}
+              onTranslate={handleTranslateInput}
+              onEditModeChange={setAiReplyEditMode}
+              onComposerTabChange={setAiReplyComposerTab}
+              onExpandChange={() => setAiSuggestionExpanded((e) => !e)}
+              onCopyAiSuggestion={copyAiSuggestion}
+              onInsertAiSuggestion={insertAiSuggestionOverDraft}
+            />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[var(--zoya-accent)]">

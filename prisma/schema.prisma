@@ -134,7 +134,7 @@ model Product {
   diamondColour     String?
   productThumbnails String?  // Product thumbnail images (JSON array)
   productImages     String?  // Full product images (JSON array)
-  // embedding field removed for SQLite compatibility - will use keyword search
+  // Vector embedding column is managed via raw SQL (pgvector on Supabase), not Prisma schema.
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
