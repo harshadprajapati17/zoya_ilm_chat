@@ -51,9 +51,22 @@ function isAnalyticsPath(pathname: string): boolean {
   );
 }
 
-function unauthorizedResponse(pathname: string): NextResponse {
-  if (pathname.startsWith("/api/analytics")) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+function unauthorizedResponse(
+  pathname: string,
+  request: NextRequest
+): NextResponse {
+  const isPrefetchOrFetch =
+    pathname.startsWith("/api/analytics") ||
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.headers.get("rsc") === "1" ||
+    request.headers.get("purpose") === "prefetch" ||
+    request.headers.get("sec-purpose")?.includes("prefetch");
+
+  if (isPrefetchOrFetch) {
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 }
+    );
   }
 
   return new NextResponse("Authentication required.", {
@@ -71,7 +84,7 @@ export function middleware(request: NextRequest) {
   if (isAnalyticsPath(pathname)) {
     const authorization = request.headers.get("authorization");
     if (!authorization || !authorization.startsWith("Basic ")) {
-      return unauthorizedResponse(pathname);
+      return unauthorizedResponse(pathname, request);
     }
 
     const encodedCredentials = authorization.split(" ")[1];
@@ -79,12 +92,12 @@ export function middleware(request: NextRequest) {
     try {
       decodedCredentials = atob(encodedCredentials);
     } catch {
-      return unauthorizedResponse(pathname);
+      return unauthorizedResponse(pathname, request);
     }
     const separatorIndex = decodedCredentials.indexOf(":");
 
     if (separatorIndex === -1) {
-      return unauthorizedResponse(pathname);
+      return unauthorizedResponse(pathname, request);
     }
 
     const username = decodedCredentials.slice(0, separatorIndex);
@@ -94,7 +107,7 @@ export function middleware(request: NextRequest) {
       username !== ANALYTICS_AUTH_USERNAME ||
       password !== ANALYTICS_AUTH_PASSWORD
     ) {
-      return unauthorizedResponse(pathname);
+      return unauthorizedResponse(pathname, request);
     }
   }
 
