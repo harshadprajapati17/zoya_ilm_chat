@@ -45,70 +45,42 @@ function isAnalyticsPath(pathname: string): boolean {
     pathname === "/analytics" ||
     pathname.startsWith("/analytics/") ||
     pathname === "/dashboard/analytics" ||
-    pathname.startsWith("/dashboard/analytics/") ||
-    pathname === "/api/analytics" ||
-    pathname.startsWith("/api/analytics/")
+    pathname.startsWith("/dashboard/analytics/")
   );
 }
 
-function unauthorizedResponse(
-  pathname: string,
-  request: NextRequest
-): NextResponse {
-  const isPrefetchOrFetch =
-    pathname.startsWith("/api/analytics") ||
-    request.headers.get("next-router-prefetch") === "1" ||
-    request.headers.get("rsc") === "1" ||
-    request.headers.get("purpose") === "prefetch" ||
-    request.headers.get("sec-purpose")?.includes("prefetch");
-
-  if (isPrefetchOrFetch) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 }
-    );
+function isAuthenticated(request: NextRequest): boolean {
+  const authorization = request.headers.get("authorization");
+  if (!authorization || !authorization.startsWith("Basic ")) {
+    return false;
   }
 
-  return new NextResponse("Authentication required.", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="Analytics", charset="UTF-8"',
-    },
-  });
+  try {
+    const encoded = authorization.split(" ")[1];
+    const decoded = atob(encoded);
+    const separatorIndex = decoded.indexOf(":");
+    if (separatorIndex === -1) return false;
+
+    const username = decoded.slice(0, separatorIndex);
+    const password = decoded.slice(separatorIndex + 1);
+
+    return (
+      username === ANALYTICS_AUTH_USERNAME &&
+      password === ANALYTICS_AUTH_PASSWORD
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const userAgent = request.headers.get("user-agent") ?? "";
 
-  if (isAnalyticsPath(pathname)) {
-    const authorization = request.headers.get("authorization");
-    if (!authorization || !authorization.startsWith("Basic ")) {
-      return unauthorizedResponse(pathname, request);
-    }
-
-    const encodedCredentials = authorization.split(" ")[1];
-    let decodedCredentials = "";
-    try {
-      decodedCredentials = atob(encodedCredentials);
-    } catch {
-      return unauthorizedResponse(pathname, request);
-    }
-    const separatorIndex = decodedCredentials.indexOf(":");
-
-    if (separatorIndex === -1) {
-      return unauthorizedResponse(pathname, request);
-    }
-
-    const username = decodedCredentials.slice(0, separatorIndex);
-    const password = decodedCredentials.slice(separatorIndex + 1);
-
-    if (
-      username !== ANALYTICS_AUTH_USERNAME ||
-      password !== ANALYTICS_AUTH_PASSWORD
-    ) {
-      return unauthorizedResponse(pathname, request);
-    }
+  if (isAnalyticsPath(pathname) && !isAuthenticated(request)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/api/basicauth";
+    return NextResponse.rewrite(url);
   }
 
   if (!isPreviewBot(userAgent) && isCrawlerUserAgent(userAgent)) {
@@ -119,5 +91,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
