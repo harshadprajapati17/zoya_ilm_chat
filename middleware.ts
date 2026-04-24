@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const ANALYTICS_AUTH_USERNAME = "thence_demo";
+const ANALYTICS_AUTH_PASSWORD = "Thence#Admin";
+
 const CRAWLER_PATTERNS = [
   "bot",
   "crawler",
@@ -37,8 +40,59 @@ function isCrawlerUserAgent(userAgent: string): boolean {
   );
 }
 
+function isAnalyticsPath(pathname: string): boolean {
+  return (
+    pathname === "/analytics" ||
+    pathname.startsWith("/analytics/") ||
+    pathname === "/dashboard/analytics" ||
+    pathname.startsWith("/dashboard/analytics/") ||
+    pathname === "/api/analytics" ||
+    pathname.startsWith("/api/analytics/")
+  );
+}
+
+function unauthorizedResponse(): NextResponse {
+  return new NextResponse("Authentication required.", {
+    status: 401,
+    headers: {
+      "WWW-Authenticate": 'Basic realm="Analytics", charset="UTF-8"',
+    },
+  });
+}
+
 export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
   const userAgent = request.headers.get("user-agent") ?? "";
+
+  if (isAnalyticsPath(pathname)) {
+    const authorization = request.headers.get("authorization");
+    if (!authorization || !authorization.startsWith("Basic ")) {
+      return unauthorizedResponse();
+    }
+
+    const encodedCredentials = authorization.split(" ")[1];
+    let decodedCredentials = "";
+    try {
+      decodedCredentials = atob(encodedCredentials);
+    } catch {
+      return unauthorizedResponse();
+    }
+    const separatorIndex = decodedCredentials.indexOf(":");
+
+    if (separatorIndex === -1) {
+      return unauthorizedResponse();
+    }
+
+    const username = decodedCredentials.slice(0, separatorIndex);
+    const password = decodedCredentials.slice(separatorIndex + 1);
+
+    if (
+      username !== ANALYTICS_AUTH_USERNAME ||
+      password !== ANALYTICS_AUTH_PASSWORD
+    ) {
+      return unauthorizedResponse();
+    }
+  }
 
   if (!isPreviewBot(userAgent) && isCrawlerUserAgent(userAgent)) {
     return new NextResponse("Crawler access is blocked.", { status: 403 });
