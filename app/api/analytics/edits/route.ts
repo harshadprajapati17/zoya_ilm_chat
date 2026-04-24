@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import firstFiveCards from '@/data/mock/analytics/edits/first-five-cards.json';
+import { isAnalyticsAuthenticated, unauthorizedResponse } from '@/lib/analyticsAuth';
 
 type DemoEditOverride = {
   customerQuery: string;
@@ -12,6 +13,7 @@ type DemoEditOverride = {
 
 // GET /api/analytics/edits - Get detailed edit records
 export async function GET(request: NextRequest) {
+  if (!isAnalyticsAuthenticated(request)) return unauthorizedResponse();
   try {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');

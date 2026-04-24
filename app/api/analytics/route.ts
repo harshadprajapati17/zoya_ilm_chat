@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getFeedbackInsights } from '@/lib/services/aiFeedbackLearning';
+import { isAnalyticsAuthenticated, unauthorizedResponse } from '@/lib/analyticsAuth';
 
 // GET /api/analytics - Get comprehensive AI performance analytics
 export async function GET(request: NextRequest) {
+  if (!isAnalyticsAuthenticated(request)) return unauthorizedResponse();
   try {
     const searchParams = request.nextUrl.searchParams;
     const days = parseInt(searchParams.get('days') || '30');

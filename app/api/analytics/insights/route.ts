@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import insightsData from '@/data/mock/analytics/insights/insights.json';
 import qualifiedLeadsByRange from '@/data/mock/analytics/insights/qualified-leads-by-range.json';
+import { isAnalyticsAuthenticated, unauthorizedResponse } from '@/lib/analyticsAuth';
 
 export async function GET(request: NextRequest) {
+  if (!isAnalyticsAuthenticated(request)) return unauthorizedResponse();
   try {
     const searchParams = request.nextUrl.searchParams;
     const hasCustomRange = Boolean(searchParams.get('startDate') && searchParams.get('endDate'));

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isAnalyticsAuthenticated, unauthorizedResponse } from '@/lib/analyticsAuth';
 
 // GET /api/analytics/roi - Get ROI-focused analytics data
 export async function GET(request: NextRequest) {
+  if (!isAnalyticsAuthenticated(request)) return unauthorizedResponse();
   try {
     const searchParams = request.nextUrl.searchParams;
     const daysParam = parseInt(searchParams.get('days') || '90', 10);
