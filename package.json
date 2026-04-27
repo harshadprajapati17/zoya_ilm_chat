@@ -15,7 +15,8 @@
     "db:verify:supabase": "bash -c 'set -a; source .env; set +a; psql \"$DIRECT_URL\" -c \"select count(*) as users from public.\\\"User\\\";\" -c \"select count(*) as products from public.\\\"Product\\\";\" -c \"select count(*) as messages from public.\\\"Message\\\";\"'",
     "db:shift-insights-dates": "tsx scripts/shift-aieditfeedback-created-at-months.ts",
     "db:backfill:product-embeddings": "prisma generate && tsx scripts/backfill-product-embeddings.ts",
-    "db:backfill:product-embeddings:one": "prisma generate && PRODUCT_EMBEDDING_MAX_ROWS=1 tsx scripts/backfill-product-embeddings.ts"
+    "db:backfill:product-embeddings:one": "prisma generate && PRODUCT_EMBEDDING_MAX_ROWS=1 tsx scripts/backfill-product-embeddings.ts",
+    "db:check:url": "tsx scripts/check-database-url.ts"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",

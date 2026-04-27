@@ -505,6 +505,7 @@ export default function LeadManagementDashboard({
   managerName,
 }: LeadManagementDashboardProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [totalActiveCount, setTotalActiveCount] = useState(0);
   const [conversationsInitialLoading, setConversationsInitialLoading] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -773,10 +774,15 @@ export default function LeadManagementDashboard({
         cache: 'no-store',
       });
       const data = await response.json();
-      setConversations(Array.isArray(data?.conversations) ? data.conversations : []);
+      const nextConversations = Array.isArray(data?.conversations) ? data.conversations : [];
+      setConversations(nextConversations);
+      setTotalActiveCount(
+        typeof data?.totalCount === 'number' ? data.totalCount : nextConversations.length
+      );
     } catch (error) {
       console.error('Error fetching conversations:', error);
       setConversations([]);
+      setTotalActiveCount(0);
     } finally {
       setConversationsInitialLoading(false);
     }
@@ -1079,6 +1085,7 @@ export default function LeadManagementDashboard({
       }
 
       setConversations((prev) => prev.filter((conv) => conv.id !== conversationId));
+      setTotalActiveCount((prev) => Math.max(0, prev - 1));
       setSelectedConversation(null);
       setMessages([]);
       setAiSuggestion(null);
@@ -1215,7 +1222,7 @@ export default function LeadManagementDashboard({
                   color: 'var(--zoya-gold)',
                 }}
               >
-                {conversations.length} active
+                {totalActiveCount} active
               </span>
             )}
           </div>

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,6 +5,170 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String?        @unique
+  phone         String?
+  role          UserRole       @default(CUSTOMER)
+  language      String         @default("en")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[] @relation("UserConversations")
+  messages      Message[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Conversation {
+  id                String    @id @default(cuid())
+  customerId        String
+  assignedManagerId String?
+  status            String    @default("active")
+  customerLanguage  String    @default("en")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  currentSessionId  String?
+  customer          User      @relation("UserConversations", fields: [customerId], references: [id])
+  messages          Message[]
+
+  @@index([customerId])
+  @@index([assignedManagerId])
+  @@index([status])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  conversationId    String
+  senderId          String
+  content           String
+  translatedContent String?
+  originalLanguage  String           @default("en")
+  status            MessageStatus    @default(SENT)
+  isFromCustomer    Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  sessionId         String?
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender            User             @relation(fields: [senderId], references: [id])
+  suggestedReplies  SuggestedReply[]
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+model SuggestedReply {
+  id           String          @id @default(cuid())
+  messageId    String
+  content      String
+  confidence   Float           @default(0.5)
+  productIds   String
+  wasUsed      Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  editFeedback AIEditFeedback?
+  message      Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model Product {
+  id                String                 @id @default(cuid())
+  pid               String                 @unique
+  name              String
+  price             Float
+  currency          String                 @default("INR")
+  category          String
+  material          String?
+  stockStatus       String
+  link              String
+  purity            String?
+  gemStone1         String?
+  gemStone2         String?
+  collection        String?
+  productDetails    String?
+  metalColour       String?
+  diamondCaratage   String?
+  diamondClarity    String?
+  diamondColour     String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  productImages     String?
+  productThumbnails String?
+  embedding         Unsupported("vector")?
+  stores            ProductStore[]
+
+  @@index([category])
+  @@index([stockStatus])
+  @@index([pid])
+}
+
+model Store {
+  id        String         @id @default(cuid())
+  storeName String
+  storeType String
+  address   String
+  email     String?
+  phone     String?
+  city      String
+  state     String
+  pincode   String?
+  latitude  String?
+  longitude String?
+  country   String         @default("India")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  products  ProductStore[]
+
+  @@index([city])
+  @@index([state])
+  @@index([storeType])
+}
+
+model ProductStore {
+  id        String   @id @default(cuid())
+  productId String
+  storeId   String
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, storeId])
+  @@index([productId])
+  @@index([storeId])
+}
+
+model AIEditFeedback {
+  id                  String         @id @default(cuid())
+  suggestedReplyId    String         @unique
+  originalSuggestion  String
+  editedContent       String
+  editedBy            String
+  editCategory        EditCategory   @default(NONE)
+  editPercentage      Float          @default(0)
+  similarityScore     Float?
+  toneShift           String?
+  sentimentAnalysis   String?
+  productChanges      String?
+  keyChanges          String?
+  acceptanceScore     Float?
+  improvementNeeded   String?
+  conversationContext String?
+  customerQuery       String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  suggestedReply      SuggestedReply @relation(fields: [suggestedReplyId], references: [id], onDelete: Cascade)
+
+  @@index([editCategory])
+  @@index([editedBy])
+  @@index([createdAt])
+  @@index([acceptanceScore])
 }
 
 enum UserRole {
@@ -26,198 +184,12 @@ enum MessageStatus {
 }
 
 enum EditCategory {
-  TONE_ADJUSTMENT        // Changed formality or empathy level
-  PRODUCT_CORRECTION     // Wrong/missing products
-  ACCURACY_ISSUE         // Incorrect information
-  LENGTH_PROBLEM         // Too long or too short
-  LANGUAGE_QUALITY       // Grammar/clarity improvements
-  COMPLETE_REWRITE       // >70% changed
-  MINOR_EDIT             // Small tweaks
-  NONE                   // No edit made
-}
-
-model User {
-  id            String         @id @default(cuid())
-  name          String
-  email         String?        @unique
-  phone         String?
-  role          UserRole       @default(CUSTOMER)
-  language      String         @default("en") // Preferred language
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  // Relations
-  conversations Conversation[] @relation("UserConversations")
-  messages      Message[]
-
-  @@index([email])
-  @@index([role])
-}
-
-model Conversation {
-  id                String    @id @default(cuid())
-  customerId        String
-  customer          User      @relation("UserConversations", fields: [customerId], references: [id])
-  assignedManagerId String?
-  status            String    @default("active") // active, closed, waiting
-  customerLanguage  String    @default("en")
-  currentSessionId  String?   // Track the current session ID
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  // Relations
-  messages          Message[]
-
-  @@index([customerId])
-  @@index([assignedManagerId])
-  @@index([status])
-}
-
-model Message {
-  id              String        @id @default(cuid())
-  conversationId  String
-  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderId        String
-  sender          User          @relation(fields: [senderId], references: [id])
-  content         String
-  translatedContent String?     // Translated version if needed
-  originalLanguage String       @default("en")
-  status          MessageStatus @default(SENT)
-  isFromCustomer  Boolean       @default(true)
-  sessionId       String?       // Track which session this message belongs to
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  // Relations
-  suggestedReplies SuggestedReply[]
-
-  @@index([conversationId])
-  @@index([senderId])
-  @@index([createdAt])
-  @@index([sessionId])
-}
-
-model SuggestedReply {
-  id            String   @id @default(cuid())
-  messageId     String
-  message       Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  content       String
-  confidence    Float    @default(0.5) // AI confidence score
-  productIds    String   // Related product IDs (JSON encoded)
-  wasUsed       Boolean  @default(false)
-  createdAt     DateTime @default(now())
-
-  // Relations
-  editFeedback  AIEditFeedback?
-
-  @@index([messageId])
-}
-
-model Product {
-  id                String   @id @default(cuid())
-  pid               String   @unique // Product ID from CSV
-  name              String
-  price             Float
-  currency          String   @default("INR")
-  category          String
-  material          String?
-  stockStatus       String
-  link              String
-  purity            String?
-  gemStone1         String?
-  gemStone2         String?
-  collection        String?
-  productDetails    String?
-  metalColour       String?
-  diamondCaratage   String?
-  diamondClarity    String?
-  diamondColour     String?
-  productThumbnails String?  // Product thumbnail images (JSON array)
-  productImages     String?  // Full product images (JSON array)
-  // Vector embedding column is managed via raw SQL (pgvector on Supabase), not Prisma schema.
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // Relations
-  stores            ProductStore[]
-
-  @@index([category])
-  @@index([stockStatus])
-  @@index([pid])
-}
-
-model Store {
-  id          String   @id @default(cuid())
-  storeName   String
-  storeType   String
-  address     String
-  email       String?
-  phone       String?
-  city        String
-  state       String
-  pincode     String?
-  latitude    String?
-  longitude   String?
-  country     String   @default("India")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  products    ProductStore[]
-
-  @@index([city])
-  @@index([state])
-  @@index([storeType])
-}
-
-model ProductStore {
-  id          String   @id @default(cuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  storeId     String
-  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  quantity    Int      @default(0) // Stock quantity at this store
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([productId, storeId]) // One product can only be mapped to one store once
-  @@index([productId])
-  @@index([storeId])
-}
-
-model AIEditFeedback {
-  id                    String         @id @default(cuid())
-  suggestedReplyId      String         @unique
-  suggestedReply        SuggestedReply @relation(fields: [suggestedReplyId], references: [id], onDelete: Cascade)
-
-  // Content comparison
-  originalSuggestion    String         // AI's original suggestion
-  editedContent         String         // Admin's edited version
-  editedBy              String         // Manager/Admin who edited
-
-  // Analysis results
-  editCategory          EditCategory   @default(NONE)
-  editPercentage        Float          @default(0) // % of content changed
-  similarityScore       Float?         // Semantic similarity (0-1)
-
-  // Sentiment & Quality Analysis
-  toneShift             String?        // JSON: {from: "formal", to: "casual"}
-  sentimentAnalysis     String?        // JSON: detailed sentiment breakdown
-  productChanges        String?        // JSON: products added/removed/changed
-  keyChanges            String?        // JSON: list of key differences
-
-  // Learning metrics
-  acceptanceScore       Float?         // How good was the original (0-1)
-  improvementNeeded     String?        // Areas for improvement (JSON array)
-
-  // Metadata
-  conversationContext   String?        // Context at time of suggestion (JSON)
-  customerQuery         String?        // Original customer message
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-
-  @@index([editCategory])
-  @@index([editedBy])
-  @@index([createdAt])
-  @@index([acceptanceScore])
+  TONE_ADJUSTMENT
+  PRODUCT_CORRECTION
+  ACCURACY_ISSUE
+  LENGTH_PROBLEM
+  LANGUAGE_QUALITY
+  COMPLETE_REWRITE
+  MINOR_EDIT
+  NONE
 }

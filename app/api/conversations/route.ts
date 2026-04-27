@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'active';
     const managerId = searchParams.get('managerId');
+    const take = status === 'active' ? 20 : undefined;
 
     const where: any = { status };
     if (managerId) {
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
 
     const conversations = await prisma.conversation.findMany({
       where,
+      take,
       select: {
         id: true,
         customerId: true,
@@ -37,6 +39,8 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    const totalCount = await prisma.conversation.count({ where });
 
     const conversationIds = conversations.map((c) => c.id);
     const lastByConversation = new Map<
@@ -79,7 +83,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ conversations: conversationsWithPreview });
+    return NextResponse.json({
+      conversations: conversationsWithPreview,
+      totalCount,
+      displayedCount: conversationsWithPreview.length,
+    });
   } catch (error) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json(
