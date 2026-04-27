@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { generateEmbedding } from './llm';
 
 /** Devanagari script (Hindi, Marathi, etc.) — catalog fields are English so we augment the query. */
@@ -62,6 +63,12 @@ interface VectorHit {
   id: string;
   similarity: number;
 }
+
+interface VectorDimensionRow {
+  dims: number | null;
+}
+
+let cachedEmbeddingDimension: number | null = null;
 
 /**
  * Append English jewelry keywords when the query is Hindi/Hinglish so `ILIKE` / `contains`
@@ -146,7 +153,20 @@ async function searchProductsByVector(
 
   try {
     const augmented = augmentQueryForEnglishCatalog(query);
-    const queryEmbedding = await generateEmbedding(augmented);
+    if (!cachedEmbeddingDimension) {
+      const rows = (await prisma.$queryRaw`
+        SELECT vector_dims("embedding")::int AS "dims"
+        FROM "Product"
+        WHERE "embedding" IS NOT NULL
+        LIMIT 1
+      `) as VectorDimensionRow[];
+      const detected = rows[0]?.dims ?? null;
+      cachedEmbeddingDimension = detected && detected > 0 ? detected : null;
+    }
+
+    const queryEmbedding = await generateEmbedding(augmented, {
+      dimensions: cachedEmbeddingDimension ?? undefined,
+    });
     const vectorLiteral = toVectorLiteral(queryEmbedding);
     // Fetch more candidates when filtering by price to ensure we have enough results
     const priceFilterActive = options.maxPrice || options.minPrice;
@@ -172,12 +192,16 @@ async function searchProductsByVector(
     const ids = filtered.map((h) => h.id);
     
     // Build where clause with price filters
-    const whereClause: any = { id: { in: ids } };
+    const whereClause: Prisma.ProductWhereInput = { id: { in: ids } };
+    const priceFilter: Prisma.FloatFilter = {};
     if (options.maxPrice) {
-      whereClause.price = { ...whereClause.price, lte: options.maxPrice };
+      priceFilter.lte = options.maxPrice;
     }
     if (options.minPrice) {
-      whereClause.price = { ...whereClause.price, gte: options.minPrice };
+      priceFilter.gte = options.minPrice;
+    }
+    if (Object.keys(priceFilter).length > 0) {
+      whereClause.price = priceFilter;
     }
 
     const products = (await prisma.product.findMany({
@@ -194,7 +218,8 @@ async function searchProductsByVector(
     console.log(
       `[Product Search][Vector] query="${query}"${
         augmented !== query ? ` (augmented: "${augmented}")` : ''
-      }${options.maxPrice ? ` maxPrice=${options.maxPrice}` : ''}${
+      }${cachedEmbeddingDimension ? ` embeddingDims=${cachedEmbeddingDimension}` : ''}${
+        options.maxPrice ? ` maxPrice=${options.maxPrice}` : ''}${
         options.minPrice ? ` minPrice=${options.minPrice}` : ''
       } hits=${hits.length} filtered=${filtered.length} priceFiltered=${products.length} returned=${ordered.length}`
     );

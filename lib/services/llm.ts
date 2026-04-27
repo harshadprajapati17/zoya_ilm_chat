@@ -16,6 +16,10 @@ interface ChatCompletionOptions {
   model?: string;
 }
 
+interface EmbeddingOptions {
+  dimensions?: number;
+}
+
 type LLMProvider = 'openai' | 'gemini';
 
 const provider = (process.env.LLM_PROVIDER || 'openai').toLowerCase() as LLMProvider;
@@ -30,7 +34,7 @@ const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash-lite';
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
-const GEMINI_EMBEDDING_DIMENSION = Number(process.env.GEMINI_EMBEDDING_DIMENSION || 1536);
+const GEMINI_EMBEDDING_DIMENSION = Number(process.env.GEMINI_EMBEDDING_DIMENSION || 3072);
 
 function shortPreview(text: string, max = 80): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
@@ -250,49 +254,65 @@ export async function generateGeminiChatFromContents(
   throw new Error('Gemini returned empty response text');
 }
 
-async function generateOpenAIEmbedding(text: string): Promise<number[]> {
+async function generateOpenAIEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[]> {
+  const dimensions = options.dimensions ?? Number(process.env.OPENAI_EMBEDDING_DIMENSION || 1536);
   const response = await openai.embeddings.create({
     model: OPENAI_EMBEDDING_MODEL,
     input: text,
-    dimensions: 1536,
+    dimensions,
   });
 
   return response.data[0].embedding;
 }
 
-async function generateGeminiEmbedding(text: string): Promise<number[]> {
+async function generateGeminiEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[]> {
+  const targetDimensions = options.dimensions ?? GEMINI_EMBEDDING_DIMENSION;
   const response = await gemini.models.embedContent({
     model: GEMINI_EMBEDDING_MODEL,
     contents: text,
     config: {
-      outputDimensionality: GEMINI_EMBEDDING_DIMENSION,
+      outputDimensionality: targetDimensions,
     },
   });
   const values = response.embeddings?.[0]?.values;
   if (!values || values.length === 0) {
     throw new Error('Gemini embedding response did not contain vector values');
   }
-  if (values.length !== GEMINI_EMBEDDING_DIMENSION) {
+  if (values.length !== targetDimensions) {
     throw new Error(
-      `Gemini embedding dimension mismatch: expected ${GEMINI_EMBEDDING_DIMENSION}, got ${values.length}`
+      `Gemini embedding dimension mismatch: expected ${targetDimensions}, got ${values.length}`
     );
   }
   return values;
 }
 
-export async function generateEmbedding(text: string): Promise<number[]> {
+export async function generateEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[]> {
   try {
     ensureProviderCredentials();
     if (provider === 'gemini') {
-      return await generateGeminiEmbedding(text);
+      return await generateGeminiEmbedding(text, options);
     }
-    return await generateOpenAIEmbedding(text);
+    return await generateOpenAIEmbedding(text, options);
   } catch (error) {
-    const hint = `provider=${provider};type=embedding;inputChars=${text.length}`;
+    const hint = `provider=${provider};type=embedding;inputChars=${text.length};dimensions=${options.dimensions ?? 'default'}`;
     const wrappedError = withHint(error, hint);
     console.error('Error generating embedding:', wrappedError);
     throw wrappedError;
   }
+}
+
+function isGeminiOverloadedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('"status":"UNAVAILABLE"') ||
+    error.message.includes('"code":503') ||
+    error.message.includes('status: 503') ||
+    error.message.includes('experiencing high demand')
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function generateOpenAIChatCompletion(
@@ -389,6 +409,7 @@ export async function generateSuggestionChatCompletion(
         const primaryModel = suggestionOptions.model || GEMINI_CHAT_MODEL;
         const isEmptyError =
           primaryError instanceof Error && primaryError.message.includes('Gemini returned empty response text');
+        const isOverloadedError = isGeminiOverloadedError(primaryError);
 
         if (isEmptyError && fallbackModel !== primaryModel) {
           console.warn(
@@ -402,6 +423,24 @@ export async function generateSuggestionChatCompletion(
           );
           logReplySuggestionOutput('gemini', fallbackText);
           return fallbackText;
+        }
+
+        if (isOverloadedError) {
+          const retryDelayMs = Number(process.env.GEMINI_RETRY_DELAY_MS || 900);
+          console.warn(
+            `[LLM][Gemini][reply-suggestion][retry] primary model "${primaryModel}" overloaded (503); retrying after ${retryDelayMs}ms`
+          );
+          await delay(retryDelayMs);
+
+          const retryModel = fallbackModel || primaryModel;
+          const retryText = await generateGeminiChatFromContents(
+            systemInstruction,
+            geminiContents,
+            { ...suggestionOptions, model: retryModel },
+            { source: 'reply-suggestion-retry', skipGeminiDetailLogs: true }
+          );
+          logReplySuggestionOutput('gemini', retryText);
+          return retryText;
         }
 
         throw primaryError;
