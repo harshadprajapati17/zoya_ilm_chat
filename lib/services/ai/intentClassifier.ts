@@ -3,7 +3,7 @@
  * detection with a single fast LLM call that semantically understands
  * what the user wants, then routes catalog search accordingly.
  */
-import { generateChatCompletion } from '../llm';
+import { generateChatCompletion, getLLMProvider } from '../llm';
 import type { ChatHistoryTurn } from '../conversationLLMContext';
 
 export type SearchIntent =
@@ -11,45 +11,56 @@ export type SearchIntent =
   | 'browse_catalog'
   | 'store_query'
   | 'conversation'
-  | 'repair_service';
+  | 'repair_service'
+  | 'callback_request';
 
 export interface IntentClassification {
   intent: SearchIntent;
   category: string | null;
   city: string | null;
+  country: string | null;
   priceRange: number | null;
   searchQuery: string | null;
 }
 
-const CLASSIFICATION_PROMPT = `You are a search-intent classifier for Zoya, a luxury jewelry brand.
+const CLASSIFICATION_PROMPT = `Classify the customer's latest intent for Zoya.
 
-Given a customer message and recent conversation history, classify the intent into exactly one of these categories:
+Return exactly one intent:
+- product_search
+- browse_catalog
+- store_query
+- conversation
+- repair_service
+- callback_request
 
-- **product_search**: Customer wants specific products (mentions a category like rings/necklaces/bangles/earrings/bracelets, a material, a price range, an occasion, or a specific product name).
-- **browse_catalog**: Customer wants to explore without specifics (trending, popular, new arrivals, bestsellers, "show me something", recommendations, "what do you have", gift ideas, or any general discovery request).
-- **store_query**: Customer is asking about store locations, visiting a store, store hours, availability at a store, or anything location-related. ANY mention of a city/place name combined with wanting to visit, find, or locate a store is store_query.
-- **conversation**: Customer is chatting, greeting, making small talk, asking about the brand, not shopping, or any non-product/non-store message.
-- **repair_service**: Customer mentions broken/damaged jewelry, repairs, resizing, maintenance, or service requests.
+Decision rules:
+1) Use latest message as primary signal; use history only to resolve follow-ups.
+2) If user asks about stores/branches/locations/visit/nearby, choose store_query.
+3) If assistant previously asked for city and user now replies with only a place name, choose store_query and set city to that reply.
+4) For generic location phrases without an explicit place (e.g. "nearest store", "near me"), keep city = null.
+5) For discovery requests (trending, popular, recommendations, what's new), choose browse_catalog.
+6) For damage/repair/service requests, choose repair_service.
+7) If user asks to speak over phone or requests a call back, choose callback_request.
+8) For small talk/non-shopping, choose conversation.
 
-Also extract these if present in the message or recent history:
-- **category**: jewelry category (ring, necklace, bangle, earring, bracelet, pendant) — null if not mentioned
-- **city**: city name if mentioned — null if not mentioned
-- **priceRange**: maximum budget as a number (e.g., 200000) — null if not mentioned
-- **searchQuery**: the core search terms to use for product lookup, stripped of filler words — null for conversation/browse_catalog/store_query
+Extract fields:
+- category: ring | necklace | bangle | earring | bracelet | pendant | null
+- city: explicit city/place from latest message or city-follow-up reply; otherwise null
+- country: the country the city belongs to (e.g. "India", "United States"); null if no city
+- priceRange: max budget as number, else null
+- searchQuery: concise product-search terms only; null for store_query/browse_catalog/conversation/repair_service/callback_request
 
 Examples:
-"stores near Surat" → {"intent":"store_query","category":null,"city":"Surat","priceRange":null,"searchQuery":null}
-"do you have a branch in Delhi?" → {"intent":"store_query","category":null,"city":"Delhi","priceRange":null,"searchQuery":null}
-"Ahmedabad store" → {"intent":"store_query","category":null,"city":"Ahmedabad","priceRange":null,"searchQuery":null}
-"where can I visit in Mumbai" → {"intent":"store_query","category":null,"city":"Mumbai","priceRange":null,"searchQuery":null}
-"store location" → {"intent":"store_query","category":null,"city":null,"priceRange":null,"searchQuery":null}
-"show trending" → {"intent":"browse_catalog","category":null,"city":null,"priceRange":null,"searchQuery":null}
-"gold rings under 2 lakhs" → {"intent":"product_search","category":"ring","city":null,"priceRange":200000,"searchQuery":"gold rings"}
-"just want to chat" → {"intent":"conversation","category":null,"city":null,"priceRange":null,"searchQuery":null}
-"my chain broke" → {"intent":"repair_service","category":null,"city":null,"priceRange":null,"searchQuery":null}
+- "stores near Surat" => {"intent":"store_query","category":null,"city":"Surat","country":"India","priceRange":null,"searchQuery":null}
+- (history: assistant asked city) latest: "SURAT" => {"intent":"store_query","category":null,"city":"SURAT","country":"India","priceRange":null,"searchQuery":null}
+- "nearest store" => {"intent":"store_query","category":null,"city":null,"country":null,"priceRange":null,"searchQuery":null}
+- "store in Chicago" => {"intent":"store_query","category":null,"city":"Chicago","country":"United States","priceRange":null,"searchQuery":null}
+- "show trending pieces" => {"intent":"browse_catalog","category":null,"city":null,"country":null,"priceRange":null,"searchQuery":null}
+- "gold rings under 2 lakhs" => {"intent":"product_search","category":"ring","city":null,"country":null,"priceRange":200000,"searchQuery":"gold rings"}
+- "call me" => {"intent":"callback_request","category":null,"city":null,"country":null,"priceRange":null,"searchQuery":null}
 
-Respond with ONLY valid JSON, no markdown fencing:
-{"intent":"...","category":null,"city":null,"priceRange":null,"searchQuery":null}`;
+Return ONLY valid JSON (no markdown):
+{"intent":"...","category":null,"city":null,"country":null,"priceRange":null,"searchQuery":null}`;
 
 export async function classifySearchIntent(
   customerMessage: string,
@@ -64,17 +75,12 @@ export async function classifySearchIntent(
     ? `Recent conversation:\n${recentContext}\n\nLatest customer message: "${customerMessage}"`
     : `Customer message: "${customerMessage}"`;
 
-  try {
-    const response = await generateChatCompletion(
-      [
-        { role: 'system', content: CLASSIFICATION_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      { temperature: 0, maxTokens: 120 },
-    );
+  const classifierModel =
+    process.env.INTENT_CLASSIFIER_MODEL
+    || (getLLMProvider() === 'gemini' ? 'gemini-2.5-flash-lite' : undefined);
 
-    const cleaned = response.replace(/```json\s*|```\s*/g, '').trim();
-    const parsed = JSON.parse(cleaned) as IntentClassification;
+  try {
+    const parsed = await classifyWithRetry(userPrompt, classifierModel);
 
     if (!isValidIntent(parsed.intent)) {
       parsed.intent = 'product_search';
@@ -88,6 +94,7 @@ export async function classifySearchIntent(
       intent: 'product_search',
       category: null,
       city: null,
+      country: null,
       priceRange: null,
       searchQuery: customerMessage,
     };
@@ -95,5 +102,49 @@ export async function classifySearchIntent(
 }
 
 function isValidIntent(intent: string): intent is SearchIntent {
-  return ['product_search', 'browse_catalog', 'store_query', 'conversation', 'repair_service'].includes(intent);
+  return ['product_search', 'browse_catalog', 'store_query', 'conversation', 'repair_service', 'callback_request'].includes(intent);
+}
+
+async function classifyWithRetry(
+  userPrompt: string,
+  model: string | undefined
+): Promise<IntentClassification> {
+  const primaryResponse = await generateChatCompletion(
+    [
+      { role: 'system', content: CLASSIFICATION_PROMPT },
+      { role: 'user', content: userPrompt },
+    ],
+    { temperature: 0, maxTokens: 120, model },
+  );
+
+  const primaryParsed = tryParseClassification(primaryResponse);
+  if (primaryParsed) return primaryParsed;
+
+  // Retry with a stricter minimal prompt when model returns empty/non-JSON text.
+  const retryResponse = await generateChatCompletion(
+    [
+      {
+        role: 'system',
+        content:
+          'Classify the user intent and return JSON only. Allowed intents: product_search, browse_catalog, store_query, conversation, repair_service, callback_request. Output shape: {"intent":"...","category":null,"city":null,"country":null,"priceRange":null,"searchQuery":null}.',
+      },
+      { role: 'user', content: userPrompt },
+    ],
+    { temperature: 0, maxTokens: 80, model },
+  );
+
+  const retryParsed = tryParseClassification(retryResponse);
+  if (retryParsed) return retryParsed;
+
+  throw new Error('Intent classifier returned non-JSON/empty output after retry');
+}
+
+function tryParseClassification(raw: string): IntentClassification | null {
+  if (!raw || !raw.trim()) return null;
+  const cleaned = raw.replace(/```json\s*|```\s*/g, '').trim();
+  try {
+    return JSON.parse(cleaned) as IntentClassification;
+  } catch {
+    return null;
+  }
 }

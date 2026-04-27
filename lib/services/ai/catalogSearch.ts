@@ -32,6 +32,7 @@ export async function runCatalogSearch(opts: {
   isStoreQuery: boolean;
   isBrowsingQuery: boolean;
   city: string | null;
+  country: string | null;
   effectiveCategory: string | null;
   category: string | null;
   contextualProductName: string | null;
@@ -45,6 +46,7 @@ export async function runCatalogSearch(opts: {
     isStoreQuery,
     isBrowsingQuery,
     city,
+    country,
     effectiveCategory,
     category,
     contextualProductName,
@@ -69,19 +71,33 @@ export async function runCatalogSearch(opts: {
         (pa) => pa.product.name === products[0].name || pa.product.pid === products[0].pid
       );
       products = productAvailability.map((pa) => pa.product as Product);
+      if (productAvailability.length === 0) {
+        stores = await getStoresByCity(city);
+        if (stores.length === 0) {
+          stores = await getAllStores(50, country ?? undefined);
+          isNearbyFallback = true;
+        }
+      }
     }
   } else if (isStoreQuery && city && effectiveCategory) {
     productAvailability = (await getProductAvailability(effectiveCategory, city, 3)) as ProductAvailabilityEntry[];
     products = productAvailability.map((pa) => pa.product as Product);
+    if (productAvailability.length === 0) {
+      stores = await getStoresByCity(city);
+      if (stores.length === 0) {
+        stores = await getAllStores(50, country ?? undefined);
+        isNearbyFallback = true;
+      }
+    }
   } else if (isStoreQuery && city) {
     stores = await getStoresByCity(city);
     console.log(`[AI Suggestions] Store query for city: "${city}" - Found ${stores.length} stores`);
     if (stores.length > 0) {
       console.log(`[AI Suggestions] Stores:`, stores.map((s) => `${s.storeName} in ${s.city}`));
     } else {
-      stores = await getAllStores();
+      stores = await getAllStores(50, country ?? undefined);
       isNearbyFallback = true;
-      console.log(`[AI Suggestions] No stores in "${city}" — loaded all ${stores.length} stores so LLM can suggest nearest`);
+      console.log(`[AI Suggestions] No stores in "${city}" — loaded ${country ?? 'all'} stores (${stores.length}) for nearest suggestion`);
     }
   } else if (isStoreQuery) {
     stores = await searchStores(enhancedQuery, 5);

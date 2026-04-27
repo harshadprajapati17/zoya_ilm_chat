@@ -861,7 +861,10 @@ export default function LeadManagementDashboard({
         throw new Error(data?.error || 'Failed to generate suggestion');
       }
       if (activeConversationIdRef.current !== conversationId) return;
-      if (data?.usedDefaultFallback) {
+
+      const hasValidSuggestion =
+        typeof data?.suggestedReply === 'string' && data.suggestedReply.trim().length > 0;
+      if (data?.usedDefaultFallback || !hasValidSuggestion) {
         showSuggestionToast('Server error, responding with default message.');
       }
       setAiSuggestion(data);

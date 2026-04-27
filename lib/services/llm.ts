@@ -28,7 +28,7 @@ const gemini = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || undefined
 
 const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
-const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-1.5-flash';
+const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash-lite';
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
 const GEMINI_EMBEDDING_DIMENSION = Number(process.env.GEMINI_EMBEDDING_DIMENSION || 1536);
 
@@ -167,42 +167,57 @@ export async function generateGeminiChatFromContents(
   logMeta: { source: string; skipGeminiDetailLogs?: boolean } = { source: 'gemini-contents' }
 ): Promise<string> {
   const modelName = options.model || GEMINI_CHAT_MODEL;
-  const generationConfig = {
+  const baseGenerationConfig = {
     temperature: options.temperature ?? 0.7,
     maxOutputTokens: options.maxTokens ?? 500,
   };
 
-  if (!logMeta.skipGeminiDetailLogs) {
-    logGeminiRequest(logMeta.source, {
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const generationConfig = {
+      ...baseGenerationConfig,
+      // Retry with lower temperature to reduce empty outputs.
+      temperature: attempt === 1 ? baseGenerationConfig.temperature : 0.2,
+    };
+
+    if (!logMeta.skipGeminiDetailLogs) {
+      logGeminiRequest(logMeta.source, {
+        model: modelName,
+        systemInstruction,
+        contents,
+        generationConfig,
+      });
+    }
+
+    const result = await gemini.models.generateContent({
       model: modelName,
-      systemInstruction,
       contents,
-      generationConfig,
+      config: {
+        systemInstruction: systemInstruction.trim() ? systemInstruction : undefined,
+        ...generationConfig,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+      },
     });
-  }
 
-  const result = await gemini.models.generateContent({
-    model: modelName,
-    contents,
-    config: {
-      systemInstruction: systemInstruction.trim() ? systemInstruction : undefined,
-      ...generationConfig,
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ],
-    },
-  });
+    const text = extractGeminiText(result);
+    if (text) {
+      if (!logMeta.skipGeminiDetailLogs) {
+        logGeminiResponse(logMeta.source, text);
+      }
+      return text;
+    }
 
-  const text = extractGeminiText(result);
-  if (!text) {
     const candidateCount = result.candidates?.length ?? 0;
     console.error(
       `[LLM][Gemini][empty-response][${logMeta.source}]`,
       JSON.stringify(
         {
+          attempt,
           candidateCount,
           firstCandidatePartCount: result.candidates?.[0]?.content?.parts?.length ?? 0,
         },
@@ -210,12 +225,9 @@ export async function generateGeminiChatFromContents(
         2
       )
     );
-    throw new Error('Gemini returned empty response text');
   }
-  if (!logMeta.skipGeminiDetailLogs) {
-    logGeminiResponse(logMeta.source, text);
-  }
-  return text;
+
+  throw new Error('Gemini returned empty response text');
 }
 
 async function generateOpenAIEmbedding(text: string): Promise<number[]> {
@@ -329,14 +341,38 @@ export async function generateSuggestionChatCompletion(
     logReplySuggestionInput(provider, systemInstruction, historyTail);
 
     if (provider === 'gemini') {
-      const text = await generateGeminiChatFromContents(
-        systemInstruction,
-        historyToGeminiContents(historyTail),
-        suggestionOptions,
-        { source: 'reply-suggestion', skipGeminiDetailLogs: true }
-      );
-      logReplySuggestionOutput('gemini', text);
-      return text;
+      const geminiContents = historyToGeminiContents(historyTail);
+      try {
+        const text = await generateGeminiChatFromContents(
+          systemInstruction,
+          geminiContents,
+          suggestionOptions,
+          { source: 'reply-suggestion', skipGeminiDetailLogs: true }
+        );
+        logReplySuggestionOutput('gemini', text);
+        return text;
+      } catch (primaryError) {
+        const fallbackModel = process.env.GEMINI_SUGGESTION_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
+        const primaryModel = suggestionOptions.model || GEMINI_CHAT_MODEL;
+        const isEmptyError =
+          primaryError instanceof Error && primaryError.message.includes('Gemini returned empty response text');
+
+        if (isEmptyError && fallbackModel !== primaryModel) {
+          console.warn(
+            `[LLM][Gemini][reply-suggestion][fallback] primary model "${primaryModel}" returned empty output; retrying with "${fallbackModel}"`
+          );
+          const fallbackText = await generateGeminiChatFromContents(
+            systemInstruction,
+            geminiContents,
+            { ...suggestionOptions, model: fallbackModel },
+            { source: 'reply-suggestion-fallback', skipGeminiDetailLogs: true }
+          );
+          logReplySuggestionOutput('gemini', fallbackText);
+          return fallbackText;
+        }
+
+        throw primaryError;
+      }
     }
 
     const messages: LLMMessage[] = [

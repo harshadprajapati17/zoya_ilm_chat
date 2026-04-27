@@ -35,7 +35,6 @@ import {
   extractCategoryFromMessage,
   extractCategoryFromContext,
   extractCategoryFromHistory as extractCategoryFromHistoryFn,
-  extractCityFromMessage,
 } from './ai/contextExtraction';
 
 import { runCatalogSearch } from './ai/catalogSearch';
@@ -83,7 +82,11 @@ function formatStoreLine(store: {
   pincode: string | null;
   phone: string | null;
 }): string {
-  const fullAddress = `${store.address}, ${store.city}, ${store.state}${store.pincode ? ` - ${store.pincode}` : ''}`;
+  const addressLower = store.address.toLowerCase();
+  const hasCity = addressLower.includes(store.city.toLowerCase());
+  const hasState = addressLower.includes(store.state.toLowerCase());
+  const hasPincode = !!store.pincode && addressLower.includes(store.pincode);
+  const fullAddress = `${store.address}${hasCity ? '' : `, ${store.city}`}${hasState ? '' : `, ${store.state}`}${store.pincode && !hasPincode ? ` - ${store.pincode}` : ''}`;
   const phoneLine = store.phone ? `\nPhone: ${store.phone}` : '';
   return `**${store.storeName}**\nAddress: ${fullAddress}${phoneLine}`;
 }
@@ -107,7 +110,7 @@ function buildStoreReplyFromDb(opts: {
   const details = topStores.map(formatStoreLine).join('\n\n');
 
   if (isNearbyFallback && requestedCity) {
-    return `I couldn't find a Zoya store in ${requestedCity} in our current records. Here are nearby options:\n\n${details}`;
+    return `We don't have a Zoya store in ${requestedCity}.\n\nHere are nearby options:\n\n${details}`;
   }
 
   return `Here are the details for our Zoya stores:\n\n${details}`;
@@ -185,12 +188,23 @@ export async function generateReplySuggestion(
     const intentResult = await classifySearchIntent(catalogSearchQuery, historyTail);
     const isStoreQuery = intentResult.intent === 'store_query';
     const isBrowsingQuery = intentResult.intent === 'browse_catalog';
+    const isCallRequest = intentResult.intent === 'callback_request';
 
     // ── Lightweight regex checks (structural, not semantic) ──────────
     const isLowerPriceFollowUp = detectLowerPriceFollowUp(lowerMessage);
     const hasPriorWelcomeIntro = detectPriorWelcomeIntro(historyTail);
     const isUserCorrection = detectUserCorrection(lowerMessage);
     const hasReference = detectReference(lowerMessage);
+    if (isCallRequest) {
+      return {
+        suggestedReply:
+          "Absolutely - I can arrange that for you. Please share your preferred phone number and a convenient time, and our Zoya consultant will call you shortly.",
+        confidence: 0.95,
+        relatedProducts: [],
+        reasoning: 'Callback intent detected from latest user message',
+        usedDefaultFallback: false,
+      };
+    }
 
     if (isUserCorrection) {
       console.log(`[AI Suggestions] USER CORRECTION DETECTED: "${customerMessage}"`);
@@ -215,9 +229,23 @@ export async function generateReplySuggestion(
       || (hasReference ? extractCategoryFromContext(contextualProductName) : null)
       || extractCategoryFromHistoryFn(historyTail);
 
-    let city = intentResult.city || extractCityFromMessage(lowerMessage);
+    // City resolution: LLM-first, then context fallback.
+    let city = intentResult.city?.trim() || null;
     if (!city && contextualCity && isStoreQuery) {
-      city = contextualCity;
+      city = contextualCity?.trim() || null;
+    }
+
+    // If store query but no city at all, ask user.
+    // If city is provided (even one without a store), proceed — catalog
+    // search will handle nearby-fallback via getAllStores().
+    if (isStoreQuery && !city) {
+      return {
+        suggestedReply: "I'd love to help you find a Zoya store. Which city are you in?",
+        confidence: 0.85,
+        relatedProducts: [],
+        reasoning: 'Store query detected but city missing',
+        usedDefaultFallback: false,
+      };
     }
 
     // ── Build search query ───────────────────────────────────────────
@@ -239,6 +267,7 @@ export async function generateReplySuggestion(
       isStoreQuery,
       isBrowsingQuery,
       city,
+      country: intentResult.country,
       effectiveCategory,
       category: intentResult.category,
       contextualProductName,

@@ -148,9 +148,25 @@ export async function getStoresByCity(city: string): Promise<Store[]> {
   });
 }
 
-export async function getAllStores(limit: number = 50): Promise<Store[]> {
+export async function getAllStores(limit: number = 50, country?: string): Promise<Store[]> {
   return await prisma.store.findMany({
+    where: country ? { country: { equals: country, mode: 'insensitive' } } : undefined,
     take: limit,
     orderBy: { city: 'asc' },
   });
+}
+
+
+export async function cityExists(city: string): Promise<boolean> {
+  const normalized = city.trim();
+  if (!normalized) return false;
+
+  const match = await prisma.store.findFirst({
+    where: {
+      city: { equals: normalized, mode: 'insensitive' },
+    },
+    select: { id: true },
+  });
+
+  return !!match;
 }
