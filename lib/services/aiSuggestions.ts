@@ -222,6 +222,7 @@ export async function generateReplySuggestion(
       productCount: products.length,
       requestedCity: city,
       isNearbyFallback,
+      isBrowsingQuery,
     });
 
     // ── Build learning context ───────────────────────────────────────

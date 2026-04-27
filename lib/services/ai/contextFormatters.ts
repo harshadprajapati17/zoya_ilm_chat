@@ -127,6 +127,7 @@ export function buildContextSection(
     productCount: number;
     requestedCity?: string | null;
     isNearbyFallback?: boolean;
+    isBrowsingQuery?: boolean;
   }
 ): string {
   if (availabilityContext) {
@@ -143,6 +144,9 @@ export function buildContextSection(
   }
   if (productContext) {
     console.log(`[AI Suggestions] Using product context (${meta.productCount} products)`);
+    if (meta.isBrowsingQuery) {
+      return `Popular Picks from Zoya (present these as trending/popular/recommended pieces — they are curated highlights across categories):\n${productContext}`;
+    }
     return `Available Products:\n${productContext}`;
   }
   console.log(`[AI Suggestions] No context found for query`);
