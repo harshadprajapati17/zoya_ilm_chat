@@ -32,6 +32,26 @@ const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash-lit
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
 const GEMINI_EMBEDDING_DIMENSION = Number(process.env.GEMINI_EMBEDDING_DIMENSION || 1536);
 
+function shortPreview(text: string, max = 80): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= max) return oneLine;
+  return `${oneLine.slice(0, max)}...`;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function withHint(error: unknown, hint: string): Error {
+  const baseMessage = getErrorMessage(error);
+  const err = new Error(`${baseMessage} | hint=${hint}`);
+  if (error instanceof Error && error.stack) {
+    err.stack = error.stack;
+  }
+  return err;
+}
+
 function ensureProviderCredentials() {
   if (provider === 'gemini' && !process.env.GOOGLE_API_KEY) {
     throw new Error('GOOGLE_API_KEY is required when LLM_PROVIDER=gemini');
@@ -268,8 +288,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     }
     return await generateOpenAIEmbedding(text);
   } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw error;
+    const hint = `provider=${provider};type=embedding;inputChars=${text.length}`;
+    const wrappedError = withHint(error, hint);
+    console.error('Error generating embedding:', wrappedError);
+    throw wrappedError;
   }
 }
 
@@ -317,8 +339,19 @@ export async function generateChatCompletion(
     }
     return await generateOpenAIChatCompletion(messages, options);
   } catch (error) {
-    console.error('Error generating chat completion:', error);
-    throw error;
+    const requestedModel = options.model || (provider === 'gemini' ? GEMINI_CHAT_MODEL : OPENAI_CHAT_MODEL);
+    const lastMessage = messages[messages.length - 1];
+    const hint = [
+      `provider=${provider}`,
+      'type=chat',
+      `model=${requestedModel}`,
+      `messageCount=${messages.length}`,
+      `lastRole=${lastMessage?.role || 'none'}`,
+      `lastPreview="${shortPreview(lastMessage?.content || '')}"`,
+    ].join(';');
+    const wrappedError = withHint(error, hint);
+    console.error('Error generating chat completion:', wrappedError);
+    throw wrappedError;
   }
 }
 
@@ -386,8 +419,20 @@ export async function generateSuggestionChatCompletion(
     logReplySuggestionOutput('openai', text);
     return text;
   } catch (error) {
-    console.error('Error generating suggestion chat completion:', error);
-    throw error;
+    const requestedModel = options.model || (provider === 'gemini' ? GEMINI_CHAT_MODEL : OPENAI_CHAT_MODEL);
+    const lastTurn = historyTail[historyTail.length - 1];
+    const hint = [
+      `provider=${provider}`,
+      'type=suggestion-chat',
+      `model=${requestedModel}`,
+      `systemChars=${systemInstruction.length}`,
+      `historyTurns=${historyTail.length}`,
+      `lastRole=${lastTurn?.role || 'none'}`,
+      `lastPreview="${shortPreview(lastTurn?.content || '')}"`,
+    ].join(';');
+    const wrappedError = withHint(error, hint);
+    console.error('Error generating suggestion chat completion:', wrappedError);
+    throw wrappedError;
   }
 }
 
