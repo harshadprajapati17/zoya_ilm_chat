@@ -2,7 +2,8 @@
  * AI Suggestions — thin orchestrator.
  *
  * All heavy logic lives in dedicated modules under ./ai/:
- *   intentDetection   → regex-based intent classifiers
+ *   intentClassifier  → LLM-based intent classification (search routing)
+ *   intentDetection   → lightweight regex checks (history scanning, price follow-ups)
  *   contextExtraction → extract product, city, price, category from history
  *   catalogSearch     → product / store search routing + empty-result handling
  *   contextFormatters → serialise catalog data into LLM-ready text blocks
@@ -16,13 +17,13 @@ import type { ProductSearchOptions } from './productSearch';
 import { getEnhancedPromptInstructions, getSimilarPastEdits } from './aiFeedbackLearning';
 import { translateText } from './translation';
 
+import { classifySearchIntent } from './ai/intentClassifier';
+
 import {
   detectLowerPriceFollowUp,
   detectPriorWelcomeIntro,
   detectUserCorrection,
   detectReference,
-  detectStoreQuery,
-  detectBrowsingIntent,
 } from './ai/intentDetection';
 
 import {
@@ -142,22 +143,26 @@ export async function generateReplySuggestion(
         : customerMessage.toLowerCase();
     const latestUserMessage = customerMessage.trim();
 
-    // ── Intent detection ─────────────────────────────────────────────
+    // ── LLM intent classification (semantic, not regex) ──────────────
+    const intentResult = await classifySearchIntent(catalogSearchQuery, historyTail);
+    const isStoreQuery = intentResult.intent === 'store_query';
+    const isBrowsingQuery = intentResult.intent === 'browse_catalog';
+
+    // ── Lightweight regex checks (structural, not semantic) ──────────
     const isLowerPriceFollowUp = detectLowerPriceFollowUp(lowerMessage);
     const hasPriorWelcomeIntro = detectPriorWelcomeIntro(historyTail);
     const isUserCorrection = detectUserCorrection(lowerMessage);
     const hasReference = detectReference(lowerMessage);
-    const isStoreQuery = detectStoreQuery(lowerMessage);
 
     if (isUserCorrection) {
       console.log(`[AI Suggestions] USER CORRECTION DETECTED: "${customerMessage}"`);
     }
 
-    // ── Context extraction ───────────────────────────────────────────
+    // ── Context extraction (merge LLM + history-based) ───────────────
     const contextualProductName = extractProductNameFromHistory(historyTail, hasReference);
-    const contextualCity = extractCityFromHistory(historyTail);
+    const contextualCity = intentResult.city || extractCityFromHistory(historyTail);
 
-    let contextualPriceRange = extractPriceFromCurrentMessage(lowerMessage, customerMessage);
+    let contextualPriceRange = intentResult.priceRange || extractPriceFromCurrentMessage(lowerMessage, customerMessage);
     if (!contextualPriceRange && isLowerPriceFollowUp) {
       contextualPriceRange = inferLowerPriceFromHistory(historyTail);
     }
@@ -167,23 +172,20 @@ export async function generateReplySuggestion(
 
     console.log(`[AI Suggestions] Extracted contextual price range: ${contextualPriceRange ? 'INR ' + contextualPriceRange.toLocaleString() : 'none'}`);
 
-    const category = extractCategoryFromMessage(lowerMessage);
-    const categoryFromContext = hasReference && !category ? extractCategoryFromContext(contextualProductName) : null;
-    const categoryFromHistory = !category && !categoryFromContext ? extractCategoryFromHistoryFn(historyTail) : null;
-    const effectiveCategory = category || categoryFromContext || categoryFromHistory;
+    const effectiveCategory = intentResult.category
+      || extractCategoryFromMessage(lowerMessage)
+      || (hasReference ? extractCategoryFromContext(contextualProductName) : null)
+      || extractCategoryFromHistoryFn(historyTail);
 
-    let city = extractCityFromMessage(lowerMessage);
+    let city = intentResult.city || extractCityFromMessage(lowerMessage);
     if (!city && contextualCity && isStoreQuery) {
       city = contextualCity;
     }
 
-    // ── Browsing intent ──────────────────────────────────────────────
-    const { isBrowsingQuery } = detectBrowsingIntent(lowerMessage, effectiveCategory, contextualPriceRange);
-
     // ── Build search query ───────────────────────────────────────────
-    let enhancedQuery = catalogSearchQuery;
+    let enhancedQuery = intentResult.searchQuery || catalogSearchQuery;
     if (contextualProductName && hasReference) {
-      enhancedQuery = `${contextualProductName} ${catalogSearchQuery}`;
+      enhancedQuery = `${contextualProductName} ${enhancedQuery}`;
     }
 
     const searchOptions: ProductSearchOptions = {};
@@ -200,7 +202,7 @@ export async function generateReplySuggestion(
       isBrowsingQuery,
       city,
       effectiveCategory,
-      category,
+      category: intentResult.category,
       contextualProductName,
       hasReference,
       contextualPriceRange,
