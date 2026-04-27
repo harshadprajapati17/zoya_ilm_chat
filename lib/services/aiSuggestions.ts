@@ -75,6 +75,44 @@ function stripEmojiAndSymbols(text: string): string {
     .trim();
 }
 
+function formatStoreLine(store: {
+  storeName: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string | null;
+  phone: string | null;
+}): string {
+  const fullAddress = `${store.address}, ${store.city}, ${store.state}${store.pincode ? ` - ${store.pincode}` : ''}`;
+  const phoneLine = store.phone ? `\nPhone: ${store.phone}` : '';
+  return `**${store.storeName}**\nAddress: ${fullAddress}${phoneLine}`;
+}
+
+function buildStoreReplyFromDb(opts: {
+  stores: Array<{
+    storeName: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string | null;
+    phone: string | null;
+  }>;
+  requestedCity: string | null;
+  isNearbyFallback?: boolean;
+}): string | null {
+  const { stores, requestedCity, isNearbyFallback } = opts;
+  if (stores.length === 0) return null;
+
+  const topStores = stores.slice(0, 3);
+  const details = topStores.map(formatStoreLine).join('\n\n');
+
+  if (isNearbyFallback && requestedCity) {
+    return `I couldn't find a Zoya store in ${requestedCity} in our current records. Here are nearby options:\n\n${details}`;
+  }
+
+  return `Here are the details for our Zoya stores:\n\n${details}`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Dev mock toggle                                                    */
 /* ------------------------------------------------------------------ */
@@ -210,6 +248,34 @@ export async function generateReplySuggestion(
     });
 
     const { products, stores, productAvailability, isNearbyFallback } = searchResult;
+
+    // For store-location responses, return deterministic DB-backed text
+    // to avoid any hallucination of address/phone details.
+    if (isStoreQuery && stores.length > 0 && productAvailability.length === 0) {
+      const deterministicStoreReply = buildStoreReplyFromDb({
+        stores,
+        requestedCity: city,
+        isNearbyFallback,
+      });
+      if (deterministicStoreReply) {
+        const { confidence, reasoning } = calculateConfidence({
+          products,
+          stores,
+          productAvailability,
+          contextualProductName,
+          contextualCity,
+          contextualPriceRange,
+        });
+
+        return {
+          suggestedReply: deterministicStoreReply,
+          confidence,
+          relatedProducts: products,
+          reasoning,
+          usedDefaultFallback: false,
+        };
+      }
+    }
 
     // ── Format data for LLM ──────────────────────────────────────────
     const productContext = formatProductContext(products);
