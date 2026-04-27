@@ -249,9 +249,10 @@ export async function generateReplySuggestion(
 
     const { products, stores, productAvailability, isNearbyFallback } = searchResult;
 
-    // For store-location responses, return deterministic DB-backed text
-    // to avoid any hallucination of address/phone details.
-    if (isStoreQuery && stores.length > 0 && productAvailability.length === 0) {
+    // If stores were returned from catalog search, ALWAYS use deterministic
+    // DB-backed text — regardless of how intent was classified. This ensures
+    // addresses and phone numbers are never hallucinated.
+    if (stores.length > 0 && productAvailability.length === 0) {
       const deterministicStoreReply = buildStoreReplyFromDb({
         stores,
         requestedCity: city,

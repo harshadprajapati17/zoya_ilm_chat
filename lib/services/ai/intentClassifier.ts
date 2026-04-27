@@ -27,7 +27,7 @@ Given a customer message and recent conversation history, classify the intent in
 
 - **product_search**: Customer wants specific products (mentions a category like rings/necklaces/bangles/earrings/bracelets, a material, a price range, an occasion, or a specific product name).
 - **browse_catalog**: Customer wants to explore without specifics (trending, popular, new arrivals, bestsellers, "show me something", recommendations, "what do you have", gift ideas, or any general discovery request).
-- **store_query**: Customer is asking about store locations, visiting a store, store hours, availability at a store, or anything location-related.
+- **store_query**: Customer is asking about store locations, visiting a store, store hours, availability at a store, or anything location-related. ANY mention of a city/place name combined with wanting to visit, find, or locate a store is store_query.
 - **conversation**: Customer is chatting, greeting, making small talk, asking about the brand, not shopping, or any non-product/non-store message.
 - **repair_service**: Customer mentions broken/damaged jewelry, repairs, resizing, maintenance, or service requests.
 
@@ -35,7 +35,18 @@ Also extract these if present in the message or recent history:
 - **category**: jewelry category (ring, necklace, bangle, earring, bracelet, pendant) — null if not mentioned
 - **city**: city name if mentioned — null if not mentioned
 - **priceRange**: maximum budget as a number (e.g., 200000) — null if not mentioned
-- **searchQuery**: the core search terms to use for product lookup, stripped of filler words — null for conversation/browse_catalog
+- **searchQuery**: the core search terms to use for product lookup, stripped of filler words — null for conversation/browse_catalog/store_query
+
+Examples:
+"stores near Surat" → {"intent":"store_query","category":null,"city":"Surat","priceRange":null,"searchQuery":null}
+"do you have a branch in Delhi?" → {"intent":"store_query","category":null,"city":"Delhi","priceRange":null,"searchQuery":null}
+"Ahmedabad store" → {"intent":"store_query","category":null,"city":"Ahmedabad","priceRange":null,"searchQuery":null}
+"where can I visit in Mumbai" → {"intent":"store_query","category":null,"city":"Mumbai","priceRange":null,"searchQuery":null}
+"store location" → {"intent":"store_query","category":null,"city":null,"priceRange":null,"searchQuery":null}
+"show trending" → {"intent":"browse_catalog","category":null,"city":null,"priceRange":null,"searchQuery":null}
+"gold rings under 2 lakhs" → {"intent":"product_search","category":"ring","city":null,"priceRange":200000,"searchQuery":"gold rings"}
+"just want to chat" → {"intent":"conversation","category":null,"city":null,"priceRange":null,"searchQuery":null}
+"my chain broke" → {"intent":"repair_service","category":null,"city":null,"priceRange":null,"searchQuery":null}
 
 Respond with ONLY valid JSON, no markdown fencing:
 {"intent":"...","category":null,"city":null,"priceRange":null,"searchQuery":null}`;
