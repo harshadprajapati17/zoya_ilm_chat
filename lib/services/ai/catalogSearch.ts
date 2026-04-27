@@ -32,7 +32,7 @@ export async function runCatalogSearch(opts: {
   customerMessage: string;
   isStoreQuery: boolean;
   isBrowsingQuery: boolean;
-  isGreeting: boolean;
+  allowLlmNoResultHandling: boolean;
   city: string | null;
   effectiveCategory: string | null;
   category: string | null;
@@ -46,7 +46,7 @@ export async function runCatalogSearch(opts: {
     customerMessage,
     isStoreQuery,
     isBrowsingQuery,
-    isGreeting,
+    allowLlmNoResultHandling,
     city,
     effectiveCategory,
     category,
@@ -111,7 +111,7 @@ export async function runCatalogSearch(opts: {
     productAvailability.length === 0 &&
     !contextualProductName &&
     !isBrowsingQuery &&
-    !isGreeting
+    !allowLlmNoResultHandling
   ) {
     const earlyReturn = await buildNoProductResponse(category, contextualPriceRange);
     return { products, stores, productAvailability, earlyReturn };

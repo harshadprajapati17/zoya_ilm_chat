@@ -476,9 +476,9 @@ You are helping someone choose a piece that becomes part of their story.
 
 export interface ContextNoteInputs {
   isLastTurnFromUser: boolean;
-  isGreeting: boolean;
   hasPriorWelcomeIntro: boolean;
   isLowerPriceFollowUp: boolean;
+  latestUserMessage: string;
 }
 
 export function buildContextNotes(inputs: ContextNoteInputs): string | undefined {
@@ -490,9 +490,9 @@ export function buildContextNotes(inputs: ContextNoteInputs): string | undefined
     );
   }
 
-  if (inputs.isGreeting && inputs.hasPriorWelcomeIntro) {
+  if (inputs.hasPriorWelcomeIntro) {
     notes.push(
-      'Conversation state: the standard welcome introduction ("Hello ... welcome to Zoya, I\'m Aakriti") was already sent earlier in this thread. Do not repeat that intro or any close variation. For this greeting, reply briefly and continue naturally (for example, ask one short discovery question).'
+      `Conversation state: the standard welcome introduction ("Hello ... welcome to Zoya, I'm Aakriti") was already sent earlier in this thread. Decide from the latest customer message whether this turn is a greeting/small-talk turn. If it is, do not repeat that intro (or close variations), reply briefly, and continue naturally in persona. Latest customer message: "${inputs.latestUserMessage}".`
     );
   }
 

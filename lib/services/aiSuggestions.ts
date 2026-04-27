@@ -17,7 +17,6 @@ import { getEnhancedPromptInstructions, getSimilarPastEdits } from './aiFeedback
 import { translateText } from './translation';
 
 import {
-  detectGreeting,
   detectLowerPriceFollowUp,
   detectPriorWelcomeIntro,
   detectUserCorrection,
@@ -144,7 +143,6 @@ export async function generateReplySuggestion(
     const latestUserMessage = customerMessage.trim();
 
     // ── Intent detection ─────────────────────────────────────────────
-    const isGreeting = detectGreeting(lowerMessage, customerMessage);
     const isLowerPriceFollowUp = detectLowerPriceFollowUp(lowerMessage);
     const hasPriorWelcomeIntro = detectPriorWelcomeIntro(historyTail);
     const isUserCorrection = detectUserCorrection(lowerMessage);
@@ -181,6 +179,12 @@ export async function generateReplySuggestion(
 
     // ── Browsing intent ──────────────────────────────────────────────
     const { isBrowsingQuery } = detectBrowsingIntent(lowerMessage, effectiveCategory, contextualPriceRange);
+    const allowLlmNoResultHandling =
+      !isStoreQuery &&
+      !isBrowsingQuery &&
+      !effectiveCategory &&
+      !contextualPriceRange &&
+      !contextualProductName;
 
     // ── Build search query ───────────────────────────────────────────
     let enhancedQuery = catalogSearchQuery;
@@ -200,7 +204,7 @@ export async function generateReplySuggestion(
       customerMessage,
       isStoreQuery,
       isBrowsingQuery,
-      isGreeting,
+      allowLlmNoResultHandling,
       city,
       effectiveCategory,
       category,
@@ -250,9 +254,9 @@ export async function generateReplySuggestion(
 
     const contextNote = buildContextNotes({
       isLastTurnFromUser: historyTail.length > 0 && historyTail[historyTail.length - 1]?.role === 'user',
-      isGreeting,
       hasPriorWelcomeIntro,
       isLowerPriceFollowUp,
+      latestUserMessage,
     });
 
     const systemInstruction = assembleSystemInstruction(personaPrompt, contextNote);
