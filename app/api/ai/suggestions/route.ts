@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
 
     historyTail = sanitizeHistoryTailForSuggestion(historyTail);
 
+    const buildId = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 8) ?? 'local-dev';
     const suggestion = await generateReplySuggestion(customerMessage, historyTail);
 
     // Translate the suggestion if needed
@@ -93,6 +94,15 @@ export async function POST(request: NextRequest) {
       reasoning: suggestion.reasoning,
       usedDefaultFallback: suggestion.usedDefaultFallback ?? false,
       suggestedReplyId, // Return the database ID for feedback tracking
+      debugMeta: {
+        route: '/api/ai/suggestions',
+        buildId,
+        conversationId: conversationId ?? null,
+        messageId: messageId ?? null,
+        targetLanguage,
+        historyTurns: historyTail.length,
+        relatedProductCount: suggestion.relatedProducts.length,
+      },
     });
   } catch (error) {
     console.error('Error generating AI suggestion:', error);

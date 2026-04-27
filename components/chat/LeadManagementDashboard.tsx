@@ -846,6 +846,17 @@ export default function LeadManagementDashboard({
       });
 
       const data = await response.json();
+      console.log('[AI Suggestion:client] Response received', {
+        ok: response.ok,
+        status: response.status,
+        conversationId: selectedConversation.id,
+        customerMessagePreview: lastCustomerMessage.content.slice(0, 120),
+        usedDefaultFallback: data?.usedDefaultFallback ?? null,
+        reasoning: data?.reasoning ?? null,
+        debugMeta: data?.debugMeta ?? null,
+        suggestedReplyPreview:
+          typeof data?.suggestedReply === 'string' ? data.suggestedReply.slice(0, 180) : null,
+      });
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to generate suggestion');
       }
