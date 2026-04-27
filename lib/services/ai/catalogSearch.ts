@@ -5,7 +5,6 @@
  */
 import { searchProducts, Product, ProductSearchOptions } from '../productSearch';
 import { searchStores, getProductAvailability, getStoresByCity, Store } from '../storeSearch';
-import type { SuggestionResponse } from './types';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -15,7 +14,6 @@ export interface CatalogSearchResult {
   products: Product[];
   stores: Store[];
   productAvailability: ProductAvailabilityEntry[];
-  earlyReturn?: SuggestionResponse;
 }
 
 export interface ProductAvailabilityEntry {
@@ -32,7 +30,6 @@ export async function runCatalogSearch(opts: {
   customerMessage: string;
   isStoreQuery: boolean;
   isBrowsingQuery: boolean;
-  allowLlmNoResultHandling: boolean;
   city: string | null;
   effectiveCategory: string | null;
   category: string | null;
@@ -46,7 +43,6 @@ export async function runCatalogSearch(opts: {
     customerMessage,
     isStoreQuery,
     isBrowsingQuery,
-    allowLlmNoResultHandling,
     city,
     effectiveCategory,
     category,
@@ -104,54 +100,5 @@ export async function runCatalogSearch(opts: {
     }
   }
 
-  // Early return for empty results (prevents LLM hallucination)
-  if (
-    !isStoreQuery &&
-    products.length === 0 &&
-    productAvailability.length === 0 &&
-    !contextualProductName &&
-    !isBrowsingQuery &&
-    !allowLlmNoResultHandling
-  ) {
-    const earlyReturn = await buildNoProductResponse(category, contextualPriceRange);
-    return { products, stores, productAvailability, earlyReturn };
-  }
-
   return { products, stores, productAvailability };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Hard-coded "no products" response builder                          */
-/* ------------------------------------------------------------------ */
-
-async function buildNoProductResponse(
-  category: string | null,
-  contextualPriceRange: number | null
-): Promise<SuggestionResponse> {
-  let noProductMessage = "I'd love to help you find the perfect piece! ";
-
-  if (category && contextualPriceRange) {
-    noProductMessage += `Unfortunately, I don't see any ${category}s under INR ${contextualPriceRange.toLocaleString()} in our current inventory. `;
-    const categoryProducts = await searchProducts(category, 3);
-    if (categoryProducts.length > 0) {
-      const lowestPrice = Math.min(...categoryProducts.map((p) => p.price));
-      noProductMessage += `However, we have beautiful ${category}s starting from INR ${lowestPrice.toLocaleString()}. Would you like to see those options? `;
-    }
-    noProductMessage += `\n\nAlternatively, I can show you other jewelry pieces within your budget of INR ${contextualPriceRange.toLocaleString()}. What would you prefer?`;
-  } else if (category) {
-    noProductMessage += `I'd be happy to show you our ${category} collection! Could you let me know your budget range so I can recommend the best options for you?`;
-  } else if (contextualPriceRange) {
-    noProductMessage += `I can definitely help you find beautiful jewelry within your budget of INR ${contextualPriceRange.toLocaleString()}! What type of piece are you looking for - rings, necklaces, bangles, or something else?`;
-  } else {
-    noProductMessage += `What type of jewelry are you interested in, and do you have a budget in mind? This will help me show you the perfect pieces!`;
-  }
-
-  console.log(`[AI Suggestions] NO PRODUCTS FOUND - returning hard-coded response to prevent hallucination`);
-
-  return {
-    suggestedReply: noProductMessage,
-    confidence: 0.5,
-    relatedProducts: [],
-    reasoning: 'No products found matching criteria - returned helpful guidance without hallucination',
-  };
 }

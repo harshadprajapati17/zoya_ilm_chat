@@ -179,12 +179,6 @@ export async function generateReplySuggestion(
 
     // ── Browsing intent ──────────────────────────────────────────────
     const { isBrowsingQuery } = detectBrowsingIntent(lowerMessage, effectiveCategory, contextualPriceRange);
-    const allowLlmNoResultHandling =
-      !isStoreQuery &&
-      !isBrowsingQuery &&
-      !effectiveCategory &&
-      !contextualPriceRange &&
-      !contextualProductName;
 
     // ── Build search query ───────────────────────────────────────────
     let enhancedQuery = catalogSearchQuery;
@@ -204,7 +198,6 @@ export async function generateReplySuggestion(
       customerMessage,
       isStoreQuery,
       isBrowsingQuery,
-      allowLlmNoResultHandling,
       city,
       effectiveCategory,
       category,
@@ -213,8 +206,6 @@ export async function generateReplySuggestion(
       contextualPriceRange,
       searchOptions,
     });
-
-    if (searchResult.earlyReturn) return searchResult.earlyReturn;
 
     const { products, stores, productAvailability } = searchResult;
 
