@@ -207,7 +207,7 @@ export async function generateReplySuggestion(
       searchOptions,
     });
 
-    const { products, stores, productAvailability } = searchResult;
+    const { products, stores, productAvailability, isNearbyFallback } = searchResult;
 
     // ── Format data for LLM ──────────────────────────────────────────
     const productContext = formatProductContext(products);
@@ -218,6 +218,8 @@ export async function generateReplySuggestion(
       productAvailabilityCount: productAvailability.length,
       storeCount: stores.length,
       productCount: products.length,
+      requestedCity: city,
+      isNearbyFallback,
     });
 
     // ── Build learning context ───────────────────────────────────────

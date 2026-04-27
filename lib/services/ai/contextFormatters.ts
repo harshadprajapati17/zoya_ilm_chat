@@ -125,6 +125,8 @@ export function buildContextSection(
     productAvailabilityCount: number;
     storeCount: number;
     productCount: number;
+    requestedCity?: string | null;
+    isNearbyFallback?: boolean;
   }
 ): string {
   if (availabilityContext) {
@@ -134,6 +136,9 @@ export function buildContextSection(
   if (storeContext) {
     console.log(`[AI Suggestions] Using store context (${meta.storeCount} stores):`);
     console.log(storeContext.substring(0, 300) + '...');
+    if (meta.isNearbyFallback && meta.requestedCity) {
+      return `No Zoya stores found in "${meta.requestedCity}". Here are all Zoya store locations — suggest the nearest ones to ${meta.requestedCity}:\n${storeContext}`;
+    }
     return `Available Stores:\n${storeContext}`;
   }
   if (productContext) {

@@ -4,7 +4,7 @@
  * prevents the LLM from hallucinating products.
  */
 import { searchProducts, Product, ProductSearchOptions } from '../productSearch';
-import { searchStores, getProductAvailability, getStoresByCity, Store } from '../storeSearch';
+import { searchStores, getProductAvailability, getStoresByCity, getAllStores, Store } from '../storeSearch';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -14,6 +14,7 @@ export interface CatalogSearchResult {
   products: Product[];
   stores: Store[];
   productAvailability: ProductAvailabilityEntry[];
+  isNearbyFallback?: boolean;
 }
 
 export interface ProductAvailabilityEntry {
@@ -55,6 +56,7 @@ export async function runCatalogSearch(opts: {
   let stores: Store[] = [];
   let productAvailability: ProductAvailabilityEntry[] = [];
   let products: Product[] = [];
+  let isNearbyFallback = false;
 
   if (contextualProductName && hasReference) {
     console.log(`[AI Suggestions] User referencing product: "${contextualProductName}"`);
@@ -76,6 +78,10 @@ export async function runCatalogSearch(opts: {
     console.log(`[AI Suggestions] Store query for city: "${city}" - Found ${stores.length} stores`);
     if (stores.length > 0) {
       console.log(`[AI Suggestions] Stores:`, stores.map((s) => `${s.storeName} in ${s.city}`));
+    } else {
+      stores = await getAllStores();
+      isNearbyFallback = true;
+      console.log(`[AI Suggestions] No stores in "${city}" — loaded all ${stores.length} stores so LLM can suggest nearest`);
     }
   } else if (isStoreQuery) {
     stores = await searchStores(enhancedQuery, 5);
@@ -100,5 +106,5 @@ export async function runCatalogSearch(opts: {
     }
   }
 
-  return { products, stores, productAvailability };
+  return { products, stores, productAvailability, isNearbyFallback };
 }

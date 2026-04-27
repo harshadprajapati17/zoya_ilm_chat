@@ -147,3 +147,10 @@ export async function getStoresByCity(city: string): Promise<Store[]> {
     orderBy: { storeName: 'asc' },
   });
 }
+
+export async function getAllStores(limit: number = 50): Promise<Store[]> {
+  return await prisma.store.findMany({
+    take: limit,
+    orderBy: { city: 'asc' },
+  });
+}

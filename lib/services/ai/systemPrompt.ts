@@ -403,6 +403,8 @@ Add a short, natural comment about why it's special.
 If city missing → ask naturally:
 "I'd love to help— which city are you in?"
 
+If the customer asked about a specific city but the stores listed in LIVE CONTEXT are in other cities, it means we don't have a store in their city. Acknowledge that naturally, then suggest the nearest stores from the list based on geographic proximity (e.g., if they asked about Surat, suggest Ahmedabad or Mumbai stores). Present 2–3 closest options with full details.
+
 ---
 
 ### Repair / Service Requests (high priority)
