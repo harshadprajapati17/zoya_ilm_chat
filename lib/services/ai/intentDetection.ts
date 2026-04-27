@@ -5,21 +5,6 @@
 import type { ChatHistoryTurn } from '../conversationLLMContext';
 
 /* ------------------------------------------------------------------ */
-/*  Greeting                                                           */
-/* ------------------------------------------------------------------ */
-
-export function detectGreeting(lowerMessage: string, rawMessage: string): boolean {
-  const isHindi = /^(नमस्ते|नमस्कार|प्रणाम|हैलो|हे|हाय)\b/u.test(rawMessage.trim());
-
-  return (
-    isHindi ||
-    /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|how's it going|what's up|greetings|howdy)/i.test(lowerMessage.trim()) ||
-    /^(how are you|how do you do|nice to meet you|pleasure to meet you|thanks|thank you|bye|goodbye)/i.test(lowerMessage.trim()) ||
-    /^(tell me about yourself|who are you|what do you do)/i.test(lowerMessage.trim())
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Lower-price follow-up ("too expensive", "cheaper", etc.)           */
 /* ------------------------------------------------------------------ */
 
@@ -36,8 +21,8 @@ export function detectPriorWelcomeIntro(historyTail: ChatHistoryTurn[]): boolean
     if (msg.role !== 'assistant') return false;
     const content = msg.content.toLowerCase();
     return (
-      (content.includes('welcome to zoya') && content.includes("i'm aakriti")) ||
-      (content.includes('welcome to zoya') && content.includes('i am aakriti'))
+      content.includes('welcome to zoya') ||
+      (content.includes('aakriti') && /\b(i'm|i am|this is|my name)\b/.test(content))
     );
   });
 }
