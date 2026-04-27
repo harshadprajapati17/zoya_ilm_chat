@@ -230,11 +230,13 @@ export async function generateReplySuggestion(
     if (enhancedInstructions) {
       learningContext += `\n## AI IMPROVEMENT GUIDELINES\n${enhancedInstructions}\n`;
     }
-    if (similarPastEdits.length > 0) {
+    if (!isStoreQuery && similarPastEdits.length > 0) {
       learningContext += `\n## LEARNING FROM PAST EDITS\nHere are similar queries where managers improved AI responses. Learn from these patterns:\n\n`;
       similarPastEdits.forEach((edit, i) => {
         learningContext += `Example ${i + 1}:\nAI Original: "${edit.originalSuggestion.substring(0, 150)}..."\nManager's Edit: "${edit.editedContent.substring(0, 150)}..."\nEdit Type: ${edit.editCategory}\nKey Changes: ${edit.keyChanges.join(', ')}\n\n`;
       });
+    } else if (isStoreQuery) {
+      learningContext += `\n## STORE RESPONSE SAFETY\nFor store/location replies, ignore historical edited examples and use ONLY store data from LIVE CONTEXT. Do not borrow addresses or phone numbers from memory.\n`;
     }
 
     // ── System prompt assembly ────────────────────────────────────────
